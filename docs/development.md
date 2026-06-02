@@ -60,6 +60,23 @@ $env:CODEX_THREAD_ID='manual-smoke'
 subagent-auto-manager --cwd . --json
 ```
 
-## Real Codex Exec Note
+## Real Codex Verification
 
 `codex exec` was verified to start and wait for a real subagent in this workspace, using the configured environment auth. In repeated local tests with `codex-cli 0.135.0` and `0.136.0`, enabled hook configuration did not invoke any configured hook command, including a minimal diagnostic command. The package hook entrypoint itself was separately verified by piping Codex-shaped JSON to `subagent-auto-manager hook`.
+
+Ordinary interactive `codex` was also verified through WSL `screen` while explicitly invoking the Windows CLI with `cmd.exe /c codex.cmd`. This path did invoke the configured hooks:
+
+- Codex CLI: `codex-cli 0.136.0`
+- parent session: `019e894e-a420-75b2-8212-91b56a532b05`
+- subagent id: `019e894e-e039-7b20-bd72-1140f9d2e96c`
+- observed events: `SubagentStart` and `SubagentStop`
+- final subagent output: `subagent-auto-manager`
+
+The run created `<project>/.codex/subagent_auto_manager.db/ledger.sqlite3`. With `CODEX_THREAD_ID=019e894e-a420-75b2-8212-91b56a532b05`, `subagent-auto-manager --cwd .` returned:
+
+```text
+session 019e894e total=1 running=0 stopped=1
+DONE 019e894e explorer 12s
+```
+
+Using another `CODEX_THREAD_ID` returned an empty result, verifying session isolation for the CLI path.
