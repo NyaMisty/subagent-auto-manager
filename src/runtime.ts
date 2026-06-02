@@ -12,6 +12,10 @@ export function isDirectEntry(importMetaUrl: string, argvPath: string | undefine
     return true;
   }
 
+  return isLikelySamePackageEntry(modulePath, entryPath);
+}
+
+export function isLikelySamePackageEntry(modulePath: string, entryPath: string): boolean {
   const moduleDir = dirname(modulePath);
   const entryDir = dirname(entryPath);
   return basename(modulePath) === basename(entryPath) && basename(dirname(moduleDir)) === basename(dirname(entryDir));
