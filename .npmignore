@@ -1,0 +1,6 @@
+src/
+test/
+.github/
+.codex/
+tsconfig.json
+*.tgz

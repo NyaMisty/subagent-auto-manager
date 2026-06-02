@@ -1,0 +1,44 @@
+{
+  "name": "subagent-auto-manager",
+  "version": "0.1.0",
+  "description": "Codex subagent ledger CLI and hooks backed by SQLite.",
+  "type": "module",
+  "bin": {
+    "subagent-auto-manager": "./dist/cli.js",
+    "codex-subagents": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "node --run clean:dist && node --run clean:coverage",
+    "clean:dist": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "clean:coverage": "node -e \"require('node:fs').rmSync('coverage',{recursive:true,force:true})\"",
+    "prepack": "npm run build",
+    "test": "tsc -p tsconfig.test.json && node --test dist/**/*.test.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "keywords": [
+    "codex",
+    "subagent",
+    "hooks",
+    "sqlite",
+    "cli"
+  ],
+  "author": "NyaMisty",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "typescript": "^5.8.3"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}
