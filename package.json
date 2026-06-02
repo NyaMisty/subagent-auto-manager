@@ -4,8 +4,8 @@
   "description": "Codex subagent ledger CLI and hooks backed by SQLite.",
   "type": "module",
   "bin": {
-    "subagent-auto-manager": "./dist/cli.js",
-    "codex-subagents": "./dist/cli.js"
+    "subagent-auto-manager": "dist/cli.js",
+    "codex-subagents": "dist/cli.js"
   },
   "files": [
     "dist",
