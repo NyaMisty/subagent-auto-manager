@@ -37,7 +37,7 @@ Hooks use the `session_id` field provided by Codex in the hook JSON.
 The CLI defaults to `CODEX_THREAD_ID` and also accepts:
 
 ```sh
-npx -y subagent-auto-manager@latest --session <session-id> --cwd <project>
+subagent-auto-manager --session <session-id> --cwd <project>
 ```
 
 ## Verification
@@ -54,13 +54,12 @@ Manual hook stdin smoke:
 ```powershell
 @'
 {"hook_event_name":"SubagentStart","session_id":"manual-smoke","turn_id":"turn-1","agent_id":"agent-1","agent_type":"general","cwd":"D:\\Workspaces\\UtilWorkspace\\LLM\\subagent_auto_manager","model":"gpt-5","permission_mode":"default","prompt":"manual smoke"}
-'@ | npx -y subagent-auto-manager@latest hook
+'@ | subagent-auto-manager hook
 
 $env:CODEX_THREAD_ID='manual-smoke'
-npx -y subagent-auto-manager@latest --cwd . --json
+subagent-auto-manager --cwd . --json
 ```
 
 ## Real Codex Exec Note
 
-`codex exec` was verified to start and wait for a real subagent in this workspace, using the configured environment auth. In repeated local tests with `codex-cli 0.135.0` and `npx @openai/codex@0.136.0`, enabled hook configuration did not invoke any configured hook command, including a minimal diagnostic command. The package hook entrypoint itself was separately verified by piping Codex-shaped JSON to `npx -y subagent-auto-manager@latest hook`.
-
+`codex exec` was verified to start and wait for a real subagent in this workspace, using the configured environment auth. In repeated local tests with `codex-cli 0.135.0` and `0.136.0`, enabled hook configuration did not invoke any configured hook command, including a minimal diagnostic command. The package hook entrypoint itself was separately verified by piping Codex-shaped JSON to `subagent-auto-manager hook`.

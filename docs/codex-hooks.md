@@ -14,7 +14,7 @@ The event name is read from `hook_event_name`.
 Recommended command:
 
 ```sh
-npx -y subagent-auto-manager@latest hook
+subagent-auto-manager hook
 ```
 
 Example `hooks.json`:
@@ -24,11 +24,11 @@ Example `hooks.json`:
   "hooks": {
     "SubagentStart": [
       {
-        "matcher": "*",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y subagent-auto-manager@latest hook",
+            "command": "subagent-auto-manager hook",
             "statusMessage": "Recording subagent start"
           }
         ]
@@ -36,11 +36,11 @@ Example `hooks.json`:
     ],
     "SubagentStop": [
       {
-        "matcher": "*",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y subagent-auto-manager@latest hook",
+            "command": "subagent-auto-manager hook",
             "statusMessage": "Recording subagent stop"
           }
         ]
@@ -105,4 +105,3 @@ Known fields are copied to queryable columns:
 - `stop_hook_active`
 
 Every payload is also stored as compact raw JSON in `payload_json`, so new Codex fields are retained without a schema change.
-

@@ -4,7 +4,7 @@
 
 - npm package: `subagent-auto-manager`
 - GitHub repository: `NyaMisty/subagent-auto-manager`
-- Current published version: `0.1.2`
+- Current published version: `0.1.3`
 
 ## Required Release Path
 
@@ -50,4 +50,3 @@ The workflow has `id-token: write` permission and is trusted by npm for this pac
 Normal pushes run `.github/workflows/ci.yml`.
 
 The publish workflow intentionally skips direct push events and publishes only on `release.published` or `workflow_dispatch`, preventing accidental duplicate npm publishes.
-

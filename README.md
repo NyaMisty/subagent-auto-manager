@@ -19,11 +19,11 @@ Configure both hook events to call the CLI hook entrypoint:
   "hooks": {
     "SubagentStart": [
       {
-        "matcher": "*",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y subagent-auto-manager@latest hook",
+            "command": "subagent-auto-manager hook",
             "statusMessage": "Recording subagent start"
           }
         ]
@@ -31,11 +31,11 @@ Configure both hook events to call the CLI hook entrypoint:
     ],
     "SubagentStop": [
       {
-        "matcher": "*",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y subagent-auto-manager@latest hook",
+            "command": "subagent-auto-manager hook",
             "statusMessage": "Recording subagent stop"
           }
         ]
@@ -52,19 +52,19 @@ The hook reads Codex JSON from stdin, stores the full payload, and writes `{}` t
 List all running and historical subagents for the current Codex thread:
 
 ```sh
-npx -y subagent-auto-manager@latest
+subagent-auto-manager
 ```
 
 List only currently running subagents:
 
 ```sh
-npx -y subagent-auto-manager@latest running
+subagent-auto-manager running
 ```
 
 Use an explicit session or project directory:
 
 ```sh
-npx -y subagent-auto-manager@latest --session 019e87b0-d695-7902-96e1-9672e0a12db6 --cwd /path/to/project
+subagent-auto-manager --session 019e87b0-d695-7902-96e1-9672e0a12db6 --cwd /path/to/project
 ```
 
 Default output is intentionally compact:
