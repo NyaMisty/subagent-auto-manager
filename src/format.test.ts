@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { formatDuration, formatSession } from "./format.js";
 import type { SessionSummary, SubagentRun } from "./types.js";
 
-test("formats compact human-readable session output", () => {
+test("formats optional compact human-readable session output", () => {
   const summary: SessionSummary = {
     sessionId: "019e87b0-d695-7902-96e1-9672e0a12db6",
     running: 1,

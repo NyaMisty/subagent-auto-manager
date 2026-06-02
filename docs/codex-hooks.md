@@ -14,7 +14,7 @@ The event name is read from `hook_event_name`.
 Recommended command:
 
 ```sh
-subagent-auto-manager hook
+npx -y subagent-auto-manager hook
 ```
 
 Example `hooks.json`:
@@ -28,7 +28,7 @@ Example `hooks.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "subagent-auto-manager hook",
+            "command": "npx -y subagent-auto-manager hook",
             "statusMessage": "Recording subagent start"
           }
         ]
@@ -40,7 +40,7 @@ Example `hooks.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "subagent-auto-manager hook",
+            "command": "npx -y subagent-auto-manager hook",
             "statusMessage": "Recording subagent stop"
           }
         ]

@@ -6,10 +6,10 @@ It records `SubagentStart` and `SubagentStop` payloads, then lets you quickly se
 
 Useful when a long Codex task fans out into multiple subagents and you want a compact per-session ledger without reading rollout logs.
 
-## Install
+## Run
 
 ```sh
-npm install -g subagent-auto-manager
+npx -y subagent-auto-manager
 ```
 
 Node.js 22.14.0 or newer is required because the package uses the built-in `node:sqlite` module.
@@ -27,7 +27,7 @@ Add this to Codex hooks config, for example project `.codex/hooks.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "subagent-auto-manager hook",
+            "command": "npx -y subagent-auto-manager hook",
             "statusMessage": "Recording subagent start"
           }
         ]
@@ -39,7 +39,7 @@ Add this to Codex hooks config, for example project `.codex/hooks.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "subagent-auto-manager hook",
+            "command": "npx -y subagent-auto-manager hook",
             "statusMessage": "Recording subagent stop"
           }
         ]
@@ -56,30 +56,49 @@ The command reads Codex JSON from stdin, stores the full payload, and writes `{}
 List all running and historical subagents for the current Codex thread:
 
 ```sh
-subagent-auto-manager
+npx -y subagent-auto-manager
 ```
 
 List only currently running subagents:
 
 ```sh
-subagent-auto-manager running
+npx -y subagent-auto-manager running
 ```
 
 Use an explicit session or project directory when needed:
 
 ```sh
-subagent-auto-manager --session 019e87b0-d695-7902-96e1-9672e0a12db6 --cwd /path/to/project
+npx -y subagent-auto-manager --session 019e87b0-d695-7902-96e1-9672e0a12db6 --cwd /path/to/project
 ```
 
-Default output is intentionally compact:
+Default output is JSON:
 
-```text
-session 019e87b0 total=2 running=1 stopped=1
-RUN agent-ru general 3s review files and report issues
-DONE agent-st general 2s
+```json
+{
+  "summary": {
+    "sessionId": "019e87b0-d695-7902-96e1-9672e0a12db6",
+    "running": 1,
+    "stopped": 1,
+    "total": 2
+  },
+  "runs": [
+    {
+      "subagentId": "agent-running",
+      "agentType": "general",
+      "status": "running",
+      "prompt": "review files and report issues"
+    }
+  ]
+}
 ```
 
-Machine-readable output is available with `--json`.
+YAML output is available with `--yaml`:
+
+```sh
+npx -y subagent-auto-manager --yaml
+```
+
+Compact text output is also available with `--text`.
 
 ## Storage
 

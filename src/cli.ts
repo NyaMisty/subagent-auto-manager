@@ -6,12 +6,13 @@ import { projectRootFrom } from "./paths.js";
 import { isDirectEntry } from "./runtime.js";
 import { sessionIdFromEnv } from "./session.js";
 import { formatSession } from "./format.js";
+import { toYaml } from "./yaml.js";
 
 interface CliOptions {
   command: "list" | "running" | "hook" | "help" | "version";
   session?: string;
   cwd?: string;
-  json: boolean;
+  output: "json" | "yaml" | "text";
 }
 
 export async function main(argv = process.argv.slice(2), env = process.env): Promise<void> {
@@ -42,8 +43,11 @@ export async function main(argv = process.argv.slice(2), env = process.env): Pro
     const includeAll = options.command === "list";
     const runs = ledger.listSession(sessionId, includeAll);
     const summary = ledger.summary(sessionId);
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify({ summary, runs })}\n`);
+    const result = { summary, runs };
+    if (options.output === "json") {
+      process.stdout.write(`${JSON.stringify(result)}\n`);
+    } else if (options.output === "yaml") {
+      process.stdout.write(toYaml(result));
     } else {
       process.stdout.write(formatSession(summary, runs));
     }
@@ -55,7 +59,7 @@ export async function main(argv = process.argv.slice(2), env = process.env): Pro
 function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
     command: "list",
-    json: false
+    output: "json"
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -76,7 +80,17 @@ function parseArgs(argv: string[]): CliOptions {
     }
 
     if (arg === "--json") {
-      options.json = true;
+      options.output = "json";
+      continue;
+    }
+
+    if (arg === "--yaml" || arg === "--yml") {
+      options.output = "yaml";
+      continue;
+    }
+
+    if (arg === "--text") {
+      options.output = "text";
       continue;
     }
 
@@ -118,16 +132,17 @@ function parseArgs(argv: string[]): CliOptions {
 
 function helpText(): string {
   return `Usage:
-  codex-subagents [list] [--session <id>] [--cwd <project>] [--json]
-  codex-subagents running [--session <id>] [--cwd <project>] [--json]
-  codex-subagents hook
+  subagent-auto-manager [list] [--session <id>] [--cwd <project>] [--json|--yaml|--text]
+  subagent-auto-manager running [--session <id>] [--cwd <project>] [--json|--yaml|--text]
+  subagent-auto-manager hook
 
 Defaults:
   --session defaults to CODEX_THREAD_ID.
   --cwd defaults to the current working directory.
+  Output defaults to JSON. Use --yaml for YAML.
 
 Hook config command:
-  codex-subagents hook
+  npx -y subagent-auto-manager hook
 `;
 }
 

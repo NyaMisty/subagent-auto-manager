@@ -1,6 +1,6 @@
 {
   "name": "subagent-auto-manager",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Codex subagent ledger CLI and hooks backed by SQLite.",
   "type": "module",
   "repository": {
@@ -16,6 +16,7 @@
   },
   "files": [
     "dist",
+    "!dist/**/*.test.*",
     "README.md",
     "LICENSE"
   ],
