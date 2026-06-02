@@ -71,7 +71,7 @@ Use an explicit session or project directory when needed:
 npx -y subagent-auto-manager --session 019e87b0-d695-7902-96e1-9672e0a12db6 --cwd /path/to/project
 ```
 
-Default output is JSON:
+Default output is medium-detail JSON. It includes the fields normally useful for stats and recall: IDs, prompt, status, timing, model, and cwd.
 
 ```json
 {
@@ -96,6 +96,12 @@ YAML output is available with `--yaml`:
 
 ```sh
 npx -y subagent-auto-manager --yaml
+```
+
+Full-detail output is available with `--full` or `--detail full`. It includes every stored run field plus parsed raw start/stop hook payloads:
+
+```sh
+npx -y subagent-auto-manager --yaml --full
 ```
 
 Compact text output is also available with `--text`.

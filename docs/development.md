@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`subagent-auto-manager` records Codex subagent lifecycle hook payloads into a project-local SQLite ledger and exposes JSON or YAML CLI views by session.
+`subagent-auto-manager` records Codex subagent lifecycle hook payloads into a project-local SQLite ledger and exposes medium or full detail JSON/YAML CLI views by session.
 
 ## Package Shape
 
@@ -12,6 +12,7 @@
 - `src/paths.ts`: resolves the project-local DB path.
 - `src/session.ts`: separates hook session lookup from CLI session lookup.
 - `src/format.ts`: optional compact human-readable output for `--text`.
+- `src/output.ts`: medium/full detail output projection.
 - `src/yaml.ts`: dependency-free YAML output for `--yaml`.
 
 The package uses Node's built-in `node:sqlite`, so Node.js `>=22.14.0` is required.

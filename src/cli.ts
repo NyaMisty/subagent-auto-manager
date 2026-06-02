@@ -6,6 +6,7 @@ import { projectRootFrom } from "./paths.js";
 import { isDirectEntry } from "./runtime.js";
 import { sessionIdFromEnv } from "./session.js";
 import { formatSession } from "./format.js";
+import { buildOutput, type DetailLevel } from "./output.js";
 import { toYaml } from "./yaml.js";
 
 interface CliOptions {
@@ -13,6 +14,7 @@ interface CliOptions {
   session?: string;
   cwd?: string;
   output: "json" | "yaml" | "text";
+  detail: DetailLevel;
 }
 
 export async function main(argv = process.argv.slice(2), env = process.env): Promise<void> {
@@ -43,7 +45,7 @@ export async function main(argv = process.argv.slice(2), env = process.env): Pro
     const includeAll = options.command === "list";
     const runs = ledger.listSession(sessionId, includeAll);
     const summary = ledger.summary(sessionId);
-    const result = { summary, runs };
+    const result = buildOutput(summary, runs, options.detail);
     if (options.output === "json") {
       process.stdout.write(`${JSON.stringify(result)}\n`);
     } else if (options.output === "yaml") {
@@ -59,7 +61,8 @@ export async function main(argv = process.argv.slice(2), env = process.env): Pro
 function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
     command: "list",
-    output: "json"
+    output: "json",
+    detail: "medium"
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -91,6 +94,31 @@ function parseArgs(argv: string[]): CliOptions {
 
     if (arg === "--text") {
       options.output = "text";
+      continue;
+    }
+
+    if (arg === "--medium") {
+      options.detail = "medium";
+      continue;
+    }
+
+    if (arg === "--full") {
+      options.detail = "full";
+      continue;
+    }
+
+    if (arg === "--detail") {
+      const value = argv[index + 1];
+      if (!value) {
+        throw new Error("--detail requires a value");
+      }
+      options.detail = parseDetail(value);
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith("--detail=")) {
+      options.detail = parseDetail(arg.slice("--detail=".length));
       continue;
     }
 
@@ -130,16 +158,25 @@ function parseArgs(argv: string[]): CliOptions {
   return options;
 }
 
+function parseDetail(value: string): DetailLevel {
+  if (value === "medium" || value === "full") {
+    return value;
+  }
+
+  throw new Error(`unsupported detail level: ${value}`);
+}
+
 function helpText(): string {
   return `Usage:
-  subagent-auto-manager [list] [--session <id>] [--cwd <project>] [--json|--yaml|--text]
-  subagent-auto-manager running [--session <id>] [--cwd <project>] [--json|--yaml|--text]
+  subagent-auto-manager [list] [--session <id>] [--cwd <project>] [--json|--yaml|--text] [--detail medium|full]
+  subagent-auto-manager running [--session <id>] [--cwd <project>] [--json|--yaml|--text] [--detail medium|full]
   subagent-auto-manager hook
 
 Defaults:
   --session defaults to CODEX_THREAD_ID.
   --cwd defaults to the current working directory.
   Output defaults to JSON. Use --yaml for YAML.
+  Detail defaults to medium. Use --full or --detail full for all stored fields and raw payloads.
 
 Hook config command:
   npx -y subagent-auto-manager hook

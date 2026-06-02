@@ -1,0 +1,82 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { buildOutput } from "./output.js";
+import type { SessionSummary, SubagentRun } from "./types.js";
+
+test("medium output keeps common recall and stats fields", () => {
+  const output = buildOutput(summary(), [run()], "medium");
+  const [item] = output.runs as Record<string, unknown>[];
+
+  assert.deepEqual(Object.keys(item), [
+    "runKey",
+    "subagentId",
+    "agentId",
+    "agentType",
+    "sessionId",
+    "turnId",
+    "status",
+    "startTime",
+    "stopTime",
+    "durationMs",
+    "prompt",
+    "lastAssistantMessage",
+    "model",
+    "cwd"
+  ]);
+  assert.equal(item.prompt, "inspect package.json");
+  assert.equal("startPayload" in item, false);
+  assert.equal("stopPayload" in item, false);
+});
+
+test("full output includes all run fields and parsed raw payloads", () => {
+  const output = buildOutput(summary(), [run()], "full");
+  const [item] = output.runs as Record<string, unknown>[];
+
+  assert.equal(item.transcriptPath, "parent.jsonl");
+  assert.equal(item.agentTranscriptPath, "agent.jsonl");
+  assert.deepEqual(item.startPayload, {
+    hook_event_name: "SubagentStart",
+    extra_field: {
+      nested: true
+    }
+  });
+  assert.deepEqual(item.stopPayload, {
+    hook_event_name: "SubagentStop",
+    last_assistant_message: "done"
+  });
+});
+
+function summary(): SessionSummary {
+  return {
+    sessionId: "session-a",
+    running: 0,
+    stopped: 1,
+    total: 1
+  };
+}
+
+function run(): SubagentRun {
+  return {
+    runKey: "session-a:agent-1",
+    subagentId: "agent-1",
+    agentId: "agent-1",
+    agentType: "explorer",
+    sessionId: "session-a",
+    turnId: "turn-1",
+    permissionMode: "bypassPermissions",
+    model: "gpt-5.5",
+    cwd: "D:\\Workspaces\\repo",
+    transcriptPath: "parent.jsonl",
+    agentTranscriptPath: "agent.jsonl",
+    startEventId: 1,
+    stopEventId: 2,
+    startTime: "2026-06-02T17:08:29.524Z",
+    stopTime: "2026-06-02T17:08:41.925Z",
+    status: "stopped",
+    durationMs: 12401,
+    prompt: "inspect package.json",
+    lastAssistantMessage: "done",
+    startPayload: "{\"hook_event_name\":\"SubagentStart\",\"extra_field\":{\"nested\":true}}",
+    stopPayload: "{\"hook_event_name\":\"SubagentStop\",\"last_assistant_message\":\"done\"}"
+  };
+}
