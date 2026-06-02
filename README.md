@@ -1,6 +1,10 @@
 # subagent-auto-manager
 
-TypeScript CLI and Codex hooks for recording SubagentStart/SubagentStop events into a project-local SQLite ledger.
+Small Codex hook + CLI for tracking subagents in a project-local SQLite ledger.
+
+It records `SubagentStart` and `SubagentStop` payloads, then lets you quickly see which subagents are still running and what already finished for the current Codex session.
+
+Useful when a long Codex task fans out into multiple subagents and you want a compact per-session ledger without reading rollout logs.
 
 ## Install
 
@@ -10,9 +14,9 @@ npm install -g subagent-auto-manager
 
 Node.js 22.14.0 or newer is required because the package uses the built-in `node:sqlite` module.
 
-## Codex Hook
+## Hook Setup
 
-Configure both hook events to call the CLI hook entrypoint:
+Add this to Codex hooks config, for example project `.codex/hooks.json`:
 
 ```json
 {
@@ -45,9 +49,9 @@ Configure both hook events to call the CLI hook entrypoint:
 }
 ```
 
-The hook reads Codex JSON from stdin, stores the full payload, and writes `{}` to stdout so SubagentStop remains valid hook output.
+The command reads Codex JSON from stdin, stores the full payload, and writes `{}` to stdout so Codex can continue normally.
 
-## CLI
+## Usage
 
 List all running and historical subagents for the current Codex thread:
 
@@ -61,7 +65,7 @@ List only currently running subagents:
 subagent-auto-manager running
 ```
 
-Use an explicit session or project directory:
+Use an explicit session or project directory when needed:
 
 ```sh
 subagent-auto-manager --session 019e87b0-d695-7902-96e1-9672e0a12db6 --cwd /path/to/project
@@ -87,4 +91,8 @@ Each project stores its ledger below:
 
 The CLI isolates sessions with `CODEX_THREAD_ID` by default. Hooks use the `session_id` from the Codex hook JSON.
 
-The database stores explicit columns for common Codex hook fields such as `session_id`, `turn_id`, `agent_id`, `agent_type`, `cwd`, `model`, `permission_mode`, `transcript_path`, `agent_transcript_path`, `prompt`, `last_assistant_message`, and `stop_hook_active`, plus the complete raw payload JSON for every event.
+The database stores queryable columns for common Codex hook fields such as `session_id`, `turn_id`, `agent_id`, `agent_type`, `cwd`, `model`, `permission_mode`, `transcript_path`, `agent_transcript_path`, `prompt`, `last_assistant_message`, and `stop_hook_active`, plus the complete raw payload JSON for every event.
+
+## Publishing
+
+This package is published through GitHub Actions trusted publishing. Future releases should be made from GitHub releases or manual workflow dispatch, not local `npm publish`.
