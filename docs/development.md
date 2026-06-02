@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`subagent-auto-manager` records Codex subagent lifecycle hook payloads into a project-local SQLite ledger and exposes medium or full detail JSON/YAML CLI views by session.
+`subagent-auto-manager` records Codex subagent lifecycle hook payloads into a project-local SQLite ledger and exposes filtered medium or full detail JSON/YAML CLI views by session.
 
 ## Package Shape
 
@@ -36,10 +36,10 @@ The database stores:
 
 Hooks use the `session_id` field provided by Codex in the hook JSON.
 
-The CLI defaults to `CODEX_THREAD_ID` and also accepts:
+The CLI defaults to `CODEX_THREAD_ID`, running-only filtering, medium detail, and pretty JSON. It also accepts:
 
 ```sh
-subagent-auto-manager --session <session-id> --cwd <project>
+npx -y subagent-auto-manager --session <session-id> --cwd <project> --all --yaml --full
 ```
 
 ## Verification
@@ -59,7 +59,7 @@ Manual hook stdin smoke:
 '@ | npx -y subagent-auto-manager hook
 
 $env:CODEX_THREAD_ID='manual-smoke'
-npx -y subagent-auto-manager --cwd .
+npx -y subagent-auto-manager --cwd . --all
 ```
 
 ## Real Codex Verification

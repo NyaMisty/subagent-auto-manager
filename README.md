@@ -53,16 +53,22 @@ The command reads Codex JSON from stdin, stores the full payload, and writes `{}
 
 ## Usage
 
-List all running and historical subagents for the current Codex thread:
+List currently running subagents for the current Codex thread:
 
 ```sh
 npx -y subagent-auto-manager
 ```
 
-List only currently running subagents:
+List all running and historical subagents:
 
 ```sh
-npx -y subagent-auto-manager running
+npx -y subagent-auto-manager --all
+```
+
+List only stopped subagents:
+
+```sh
+npx -y subagent-auto-manager --stopped
 ```
 
 Use an explicit session or project directory when needed:
@@ -71,19 +77,19 @@ Use an explicit session or project directory when needed:
 npx -y subagent-auto-manager --session 019e87b0-d695-7902-96e1-9672e0a12db6 --cwd /path/to/project
 ```
 
-Default output is medium-detail JSON. It includes the fields normally useful for stats and recall: IDs, prompt, status, timing, model, and cwd.
+Default output is pretty medium-detail JSON, filtered to running agents. Medium output keeps only the operational subagent id plus recall fields: agent type, prompt, status, timing, model, cwd, and last message.
 
 ```json
 {
   "summary": {
-    "sessionId": "019e87b0-d695-7902-96e1-9672e0a12db6",
     "running": 1,
     "stopped": 1,
-    "total": 2
+    "total": 2,
+    "shown": 1
   },
   "runs": [
     {
-      "subagentId": "agent-running",
+      "agentId": "agent-running",
       "agentType": "general",
       "status": "running",
       "prompt": "review files and report issues"
@@ -105,6 +111,8 @@ npx -y subagent-auto-manager --yaml --full
 ```
 
 Compact text output is also available with `--text`.
+
+Hints are written to stderr. They summarize the active filter/format/detail settings and suggest useful next commands, while stdout remains parseable JSON/YAML/text.
 
 ## Storage
 

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -7,35 +7,36 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { SubagentLedger } from "./ledger.js";
 
-test("defaults list output to medium JSON", async () => {
+test("defaults output to pretty medium JSON filtered to running agents", async () => {
   const root = tempRoot();
-  seedRun(root, "session-json");
-  const output = runCli(["--cwd", root], { CODEX_THREAD_ID: "session-json" });
+  seedRun(root, "session-json", "running");
+  seedRun(root, "session-json", "stopped", "agent-stopped");
+  const result = runCli(["--cwd", root], { CODEX_THREAD_ID: "session-json" });
 
   try {
-    const parsed = JSON.parse(output);
+    assert.match(result.stdout, /^\{\n  "summary":/);
+    assert.match(result.stderr, /filter=running format=json detail=medium session=session-json shown=1\/2/);
+    assert.match(result.stderr, /--all/);
+    const parsed = JSON.parse(result.stdout);
     assert.deepEqual(parsed.summary, {
-      sessionId: "session-json",
-      running: 0,
+      running: 1,
       stopped: 1,
-      total: 1
+      total: 2,
+      shown: 1
     });
     assert.deepEqual(Object.keys(parsed.runs[0]), [
-      "runKey",
-      "subagentId",
       "agentId",
       "agentType",
-      "sessionId",
-      "turnId",
       "status",
+      "prompt",
       "startTime",
       "stopTime",
       "durationMs",
-      "prompt",
       "lastAssistantMessage",
       "model",
       "cwd"
     ]);
+    assert.equal(parsed.runs[0].agentId, "agent-1");
     assert.equal(parsed.runs[0].prompt, "inspect package.json");
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -45,10 +46,13 @@ test("defaults list output to medium JSON", async () => {
 test("supports full JSON list output", async () => {
   const root = tempRoot();
   seedRun(root, "session-full");
-  const output = runCli(["--cwd", root, "--full"], { CODEX_THREAD_ID: "session-full" });
+  const result = runCli(["--cwd", root, "--all", "--full"], { CODEX_THREAD_ID: "session-full" });
 
   try {
-    const parsed = JSON.parse(output);
+    const parsed = JSON.parse(result.stdout);
+    assert.equal(parsed.summary.sessionId, "session-full");
+    assert.equal(parsed.runs[0].runKey, "session-full:agent-1");
+    assert.equal(parsed.runs[0].sessionId, "session-full");
     assert.equal(parsed.runs[0].transcriptPath, join(root, "parent.jsonl"));
     assert.deepEqual(parsed.runs[0].startPayload.extra_field, { nested: true });
     assert.equal(parsed.runs[0].stopPayload.last_assistant_message, "done");
@@ -59,18 +63,19 @@ test("supports full JSON list output", async () => {
 
 test("defaults empty list output to JSON", async () => {
   const root = tempRoot();
-  const output = runCli(["--cwd", root], { CODEX_THREAD_ID: "session-empty" });
+  const result = runCli(["--cwd", root], { CODEX_THREAD_ID: "session-empty" });
 
   try {
-    assert.deepEqual(JSON.parse(output), {
+    assert.deepEqual(JSON.parse(result.stdout), {
       summary: {
-        sessionId: "session-empty",
         running: 0,
         stopped: 0,
-        total: 0
+        total: 0,
+        shown: 0
       },
       runs: []
     });
+    assert.match(result.stderr, /filter=running/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -78,10 +83,11 @@ test("defaults empty list output to JSON", async () => {
 
 test("supports optional text list output", async () => {
   const root = tempRoot();
-  const output = runCli(["--cwd", root, "--text"], { CODEX_THREAD_ID: "session-text" });
+  const result = runCli(["--cwd", root, "--text"], { CODEX_THREAD_ID: "session-text" });
 
   try {
-    assert.equal(output, "session session-text total=0 running=0 stopped=0\nno subagents\n");
+    assert.equal(result.stdout, "session session-text total=0 running=0 stopped=0\nno subagents\n");
+    assert.match(result.stderr, /format=text/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -90,13 +96,15 @@ test("supports optional text list output", async () => {
 test("supports optional YAML list output", async () => {
   const root = tempRoot();
   seedRun(root, "session-yaml");
-  const output = runCli(["--cwd", root, "--yaml"], { CODEX_THREAD_ID: "session-yaml" });
+  const result = runCli(["--cwd", root, "--yaml", "--all"], { CODEX_THREAD_ID: "session-yaml" });
 
   try {
-    assert.match(output, /summary:\n  sessionId: "session-yaml"\n  running: 0\n  stopped: 1\n  total: 1/);
-    assert.match(output, /runs:\n  -\n    runKey: "session-yaml:agent-1"/);
-    assert.match(output, /    prompt: "inspect package\.json"/);
-    assert.equal(output.includes("startPayload:"), false);
+    assert.match(result.stdout, /summary:\n  running: 0\n  stopped: 1\n  total: 1\n  shown: 1/);
+    assert.match(result.stdout, /runs:\n  -\n    agentId: "agent-1"/);
+    assert.match(result.stdout, /    prompt: "inspect package\.json"/);
+    assert.equal(result.stdout.includes("runKey:"), false);
+    assert.equal(result.stdout.includes("startPayload:"), false);
+    assert.match(result.stderr, /filter=all format=yaml/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -105,30 +113,54 @@ test("supports optional YAML list output", async () => {
 test("supports optional full YAML list output", async () => {
   const root = tempRoot();
   seedRun(root, "session-full-yaml");
-  const output = runCli(["--cwd", root, "--yaml", "--full"], { CODEX_THREAD_ID: "session-full-yaml" });
+  const result = runCli(["--cwd", root, "--yaml", "--full", "--all"], { CODEX_THREAD_ID: "session-full-yaml" });
 
   try {
-    assert.match(output, /startPayload:\n      hook_event_name: "SubagentStart"/);
-    assert.match(output, /extra_field:\n        nested: true/);
-    assert.match(output, /stopPayload:\n      hook_event_name: "SubagentStop"/);
+    assert.match(result.stdout, /sessionId: "session-full-yaml"/);
+    assert.match(result.stdout, /runKey: "session-full-yaml:agent-1"/);
+    assert.match(result.stdout, /startPayload:\n      hook_event_name: "SubagentStart"/);
+    assert.match(result.stdout, /extra_field:\n        nested: true/);
+    assert.match(result.stdout, /stopPayload:\n      hook_event_name: "SubagentStop"/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-function runCli(args: string[], env: NodeJS.ProcessEnv): string {
+test("filters stopped agents explicitly", async () => {
+  const root = tempRoot();
+  seedRun(root, "session-stopped", "running");
+  seedRun(root, "session-stopped", "stopped", "agent-stopped");
+  const result = runCli(["--cwd", root, "--stopped"], { CODEX_THREAD_ID: "session-stopped" });
+
+  try {
+    const parsed = JSON.parse(result.stdout);
+    assert.equal(parsed.summary.shown, 1);
+    assert.equal(parsed.runs[0].agentId, "agent-stopped");
+    assert.equal(parsed.runs[0].status, "stopped");
+    assert.match(result.stderr, /filter=stopped/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+function runCli(args: string[], env: NodeJS.ProcessEnv): { stdout: string; stderr: string } {
   const cliPath = join(dirname(fileURLToPath(import.meta.url)), "cli.js");
-  return execFileSync(process.execPath, [cliPath, ...args], {
+  const result = spawnSync(process.execPath, [cliPath, ...args], {
     env: { ...process.env, ...env },
     encoding: "utf8"
   });
+  assert.equal(result.status, 0, result.stderr);
+  return {
+    stdout: result.stdout,
+    stderr: result.stderr
+  };
 }
 
 function tempRoot(): string {
   return mkdtempSync(join(tmpdir(), "subagent-auto-manager-cli-"));
 }
 
-function seedRun(root: string, sessionId: string): void {
+function seedRun(root: string, sessionId: string, status: "running" | "stopped" = "stopped", agentId = "agent-1"): void {
   const ledger = SubagentLedger.open(root);
   try {
     ledger.record({
@@ -139,7 +171,7 @@ function seedRun(root: string, sessionId: string): void {
         hook_event_name: "SubagentStart",
         session_id: sessionId,
         turn_id: "turn-1",
-        agent_id: "agent-1",
+        agent_id: agentId,
         agent_type: "explorer",
         model: "gpt-5.5",
         cwd: root,
@@ -152,22 +184,24 @@ function seedRun(root: string, sessionId: string): void {
         }
       }
     });
-    ledger.record({
-      eventName: "SubagentStop",
-      sessionId,
-      projectRoot: root,
-      payload: {
-        hook_event_name: "SubagentStop",
-        session_id: sessionId,
-        turn_id: "turn-1",
-        agent_id: "agent-1",
-        agent_type: "explorer",
-        cwd: root,
-        transcript_path: join(root, "parent.jsonl"),
-        agent_transcript_path: join(root, "agent.jsonl"),
-        last_assistant_message: "done"
-      }
-    });
+    if (status === "stopped") {
+      ledger.record({
+        eventName: "SubagentStop",
+        sessionId,
+        projectRoot: root,
+        payload: {
+          hook_event_name: "SubagentStop",
+          session_id: sessionId,
+          turn_id: "turn-1",
+          agent_id: agentId,
+          agent_type: "explorer",
+          cwd: root,
+          transcript_path: join(root, "parent.jsonl"),
+          agent_transcript_path: join(root, "agent.jsonl"),
+          last_assistant_message: "done"
+        }
+      });
+    }
   } finally {
     ledger.close();
   }

@@ -4,7 +4,7 @@
 
 - npm package: `subagent-auto-manager`
 - GitHub repository: `NyaMisty/subagent-auto-manager`
-- Current published version: `0.1.6`
+- Current published version: `0.1.7`
 
 ## Required Release Path
 

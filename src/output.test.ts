@@ -7,23 +7,29 @@ test("medium output keeps common recall and stats fields", () => {
   const output = buildOutput(summary(), [run()], "medium");
   const [item] = output.runs as Record<string, unknown>[];
 
+  assert.deepEqual(output.summary, {
+    running: 0,
+    stopped: 1,
+    total: 1,
+    shown: 1
+  });
   assert.deepEqual(Object.keys(item), [
-    "runKey",
-    "subagentId",
     "agentId",
     "agentType",
-    "sessionId",
-    "turnId",
     "status",
+    "prompt",
     "startTime",
     "stopTime",
     "durationMs",
-    "prompt",
     "lastAssistantMessage",
     "model",
     "cwd"
   ]);
+  assert.equal(item.agentId, "agent-1");
   assert.equal(item.prompt, "inspect package.json");
+  assert.equal("runKey" in item, false);
+  assert.equal("sessionId" in item, false);
+  assert.equal("turnId" in item, false);
   assert.equal("startPayload" in item, false);
   assert.equal("stopPayload" in item, false);
 });
@@ -32,6 +38,16 @@ test("full output includes all run fields and parsed raw payloads", () => {
   const output = buildOutput(summary(), [run()], "full");
   const [item] = output.runs as Record<string, unknown>[];
 
+  assert.deepEqual(output.summary, {
+    sessionId: "session-a",
+    running: 0,
+    stopped: 1,
+    total: 1,
+    shown: 1
+  });
+  assert.equal(item.runKey, "session-a:agent-1");
+  assert.equal(item.sessionId, "session-a");
+  assert.equal(item.turnId, "turn-1");
   assert.equal(item.transcriptPath, "parent.jsonl");
   assert.equal(item.agentTranscriptPath, "agent.jsonl");
   assert.deepEqual(item.startPayload, {

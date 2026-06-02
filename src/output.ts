@@ -3,30 +3,42 @@ import type { SessionSummary, SubagentRun } from "./types.js";
 export type DetailLevel = "medium" | "full";
 
 export interface OutputDocument {
-  summary: SessionSummary;
+  summary: unknown;
   runs: unknown[];
 }
 
 export function buildOutput(summary: SessionSummary, runs: SubagentRun[], detail: DetailLevel): OutputDocument {
   return {
-    summary,
+    summary: detail === "full" ? fullSummary(summary, runs) : mediumSummary(summary, runs),
     runs: runs.map((run) => (detail === "full" ? fullRun(run) : mediumRun(run)))
+  };
+}
+
+function mediumSummary(summary: SessionSummary, runs: SubagentRun[]): Record<string, unknown> {
+  return {
+    running: summary.running,
+    stopped: summary.stopped,
+    total: summary.total,
+    shown: runs.length
+  };
+}
+
+function fullSummary(summary: SessionSummary, runs: SubagentRun[]): Record<string, unknown> {
+  return {
+    ...summary,
+    shown: runs.length
   };
 }
 
 function mediumRun(run: SubagentRun): Record<string, unknown> {
   return {
-    runKey: run.runKey,
-    subagentId: run.subagentId,
-    agentId: run.agentId,
+    agentId: run.agentId ?? run.subagentId,
     agentType: run.agentType,
-    sessionId: run.sessionId,
-    turnId: run.turnId,
     status: run.status,
+    prompt: run.prompt,
     startTime: run.startTime,
     stopTime: run.stopTime,
     durationMs: run.durationMs,
-    prompt: run.prompt,
     lastAssistantMessage: run.lastAssistantMessage,
     model: run.model,
     cwd: run.cwd
