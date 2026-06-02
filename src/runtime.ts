@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export function isDirectEntry(importMetaUrl: string, argvPath: string | undefined): boolean {
@@ -6,7 +6,15 @@ export function isDirectEntry(importMetaUrl: string, argvPath: string | undefine
     return false;
   }
 
-  return resolve(fileURLToPath(importMetaUrl)) === resolve(argvPath);
+  const modulePath = resolve(fileURLToPath(importMetaUrl));
+  const entryPath = resolve(argvPath);
+  if (modulePath === entryPath) {
+    return true;
+  }
+
+  const moduleDir = dirname(modulePath);
+  const entryDir = dirname(entryPath);
+  return basename(modulePath) === basename(entryPath) && basename(dirname(moduleDir)) === basename(dirname(entryDir));
 }
 
 export function suppressSqliteExperimentalWarning(): void {
