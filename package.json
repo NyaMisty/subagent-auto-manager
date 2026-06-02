@@ -1,6 +1,6 @@
 {
   "name": "subagent-auto-manager",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Codex subagent ledger CLI and hooks backed by SQLite.",
   "type": "module",
   "repository": {
@@ -11,7 +11,9 @@
     "url": "https://github.com/NyaMisty/subagent-auto-manager/issues"
   },
   "homepage": "https://github.com/NyaMisty/subagent-auto-manager#readme",
-  "bin": "dist/cli.js",
+  "bin": {
+    "subagent-auto-manager": "dist/cli.js"
+  },
   "files": [
     "dist",
     "README.md",
