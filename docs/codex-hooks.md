@@ -51,7 +51,7 @@ Example `hooks.json`:
     ],
     "PostToolUse": [
       {
-        "matcher": "close_agent|resume_agent",
+        "matcher": "(^|.*(__|\\.))(close_agent|resume_agent)$",
         "hooks": [
           {
             "type": "command",
@@ -160,13 +160,13 @@ Known fields are copied to queryable columns:
 - `tool_use_id`
 - `close_target`
 
-Every payload is also stored as compact raw JSON in `payload_json`, so new Codex fields are retained without a schema change.
+Every stored payload is also stored as compact raw JSON in `payload_json`, so new Codex fields are retained without a schema change. The hook ignores unrelated `PostToolUse` payloads; only recognized `close_agent` and `resume_agent` calls are stored from that event.
 
 ## Closed State
 
 `SubagentStop` means the subagent turn ended. It does not prove that the parent closed the agent thread.
 
-Closed state is inferred from `PostToolUse`:
+Closed state is inferred from `PostToolUse`. Configure `PostToolUse` with a suffix matcher such as `(^|.*(__|\\.))(close_agent|resume_agent)$` so Codex forwards bare and namespaced tool-name variants from multi-agent implementations.
 
 - `close_agent` with `tool_input.target` and a successful response marks that target `closed`.
 - `resume_agent` with `tool_input.id` and a successful response clears `closed`.

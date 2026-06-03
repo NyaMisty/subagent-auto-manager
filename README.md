@@ -47,7 +47,7 @@ Add this to Codex hooks config, for example project `.codex/hooks.json`:
     ],
     "PostToolUse": [
       {
-        "matcher": "close_agent|resume_agent",
+        "matcher": "(^|.*(__|\\.))(close_agent|resume_agent)$",
         "hooks": [
           {
             "type": "command",
@@ -61,7 +61,7 @@ Add this to Codex hooks config, for example project `.codex/hooks.json`:
 }
 ```
 
-The command reads Codex JSON from stdin, stores the full payload, and writes `{}` to stdout so Codex can continue normally. `SubagentStop` tracks execution completion. `PostToolUse` tracks `close_agent` and `resume_agent` tool calls, which is the available signal for whether the parent closed or reopened a subagent thread.
+The command reads Codex JSON from stdin and writes `{}` to stdout so Codex can continue normally. `SubagentStart` and `SubagentStop` payloads are stored in full. `PostToolUse` tracks `close_agent` and `resume_agent`, including namespaced tool names such as `multi_agent_v1__close_agent` or `multi_agent_v1.close_agent`, which are the available signal for whether the parent closed or reopened a subagent thread.
 
 For a global install, put the same `hooks` block in `~/.codex/hooks.json`. On Windows this is typically:
 

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`subagent-auto-manager` records Codex subagent lifecycle hook payloads into a project-local SQLite ledger and exposes filtered medium or full detail JSON/YAML CLI views by session. It also records `PostToolUse` calls for `close_agent` and `resume_agent` so closed thread state can be tracked separately from subagent turn completion.
+`subagent-auto-manager` records Codex subagent lifecycle hook payloads into a project-local SQLite ledger and exposes filtered medium or full detail JSON/YAML CLI views by session. It also records state-changing `PostToolUse` calls for `close_agent` and `resume_agent` so closed thread state can be tracked separately from subagent turn completion. Unrelated `PostToolUse` calls are ignored.
 
 ## Package Shape
 

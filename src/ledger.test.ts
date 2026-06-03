@@ -164,12 +164,109 @@ test("marks a subagent closed from successful close_agent PostToolUse and clears
       }
     });
 
+    [run] = ledger.listSession("session-close");
+    assert.equal(run.closed, true);
+
+    ledger.record({
+      eventName: "PostToolUse",
+      sessionId: "session-close",
+      projectRoot: root,
+      payload: {
+        hook_event_name: "PostToolUse",
+        session_id: "session-close",
+        cwd: root,
+        tool_name: "multi_agent_v1.resume_agent",
+        tool_input: {
+          id: "agent-close"
+        },
+        tool_response: {
+          status: "running"
+        }
+      }
+    });
+
+    [run] = ledger.listSession("session-close");
+    assert.equal(run.closed, false);
+
+    ledger.record({
+      eventName: "PostToolUse",
+      sessionId: "session-close",
+      projectRoot: root,
+      payload: {
+        hook_event_name: "PostToolUse",
+        session_id: "session-close",
+        cwd: root,
+        tool_name: "multi_agent_v1.close_agent",
+        tool_input: {
+          target: "agent-close"
+        },
+        tool_response: {
+          previous_status: "completed"
+        }
+      }
+    });
+
+    [run] = ledger.listSession("session-close");
+    assert.equal(run.closed, true);
+
     assert.deepEqual(ledger.resetClosed("session-close", "agent-close"), {
       matched: 1,
       reset: 1
     });
     [run] = ledger.listSession("session-close");
     assert.equal(run.closed, false);
+  } finally {
+    ledger.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("ignores unrelated PostToolUse payloads when hooks match all tools", () => {
+  const root = tempRoot();
+  const ledger = SubagentLedger.open(root);
+
+  try {
+    ledger.record({
+      eventName: "SubagentStart",
+      sessionId: "session-unrelated-tool",
+      projectRoot: root,
+      payload: {
+        hook_event_name: "SubagentStart",
+        session_id: "session-unrelated-tool",
+        agent_id: "agent-open",
+        cwd: root
+      }
+    });
+
+    const result = ledger.record({
+      eventName: "PostToolUse",
+      sessionId: "session-unrelated-tool",
+      projectRoot: root,
+      payload: {
+        hook_event_name: "PostToolUse",
+        session_id: "session-unrelated-tool",
+        cwd: root,
+        tool_name: "shell_command",
+        tool_input: {
+          command: "npm test"
+        },
+        tool_response: {
+          exit_code: 0
+        }
+      }
+    });
+
+    assert.deepEqual(result, {
+      eventId: 0,
+      subagentId: "",
+      recorded: false
+    });
+    assert.equal(ledger.summary("session-unrelated-tool").closed, 0);
+    assert.equal(ledger.listSession("session-unrelated-tool")[0]?.closed, false);
+    assert.equal(
+      ledger.eventsForSession("session-unrelated-tool").some((event) => event.event_name === "PostToolUse"),
+      false
+    );
   } finally {
     ledger.close();
     rmSync(root, { recursive: true, force: true });

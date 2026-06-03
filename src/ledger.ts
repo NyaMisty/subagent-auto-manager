@@ -82,6 +82,7 @@ export interface LedgerRecordInput {
 export interface LedgerRecordResult {
   eventId: number;
   subagentId: string;
+  recorded?: boolean;
 }
 
 export interface ResetClosedResult {
@@ -113,6 +114,14 @@ export class SubagentLedger {
     const payloadJson = compactJson(input.payload);
     const fields = extractFields(input.payload, input.projectRoot);
     const toolStateChange = toolStateChangeFromPayload(input.eventName, input.payload);
+    if (input.eventName === "PostToolUse" && !toolStateChange) {
+      return {
+        eventId: 0,
+        subagentId: fields.agentId ?? "",
+        recorded: false
+      };
+    }
+
     const runKey = this.resolveRunKey(input.eventName, input.sessionId, fields, payloadJson, toolStateChange);
     const subagentId = fields.agentId ?? toolStateChange?.target ?? runKey;
 
@@ -158,7 +167,7 @@ export class SubagentLedger {
       this.resetClosedByRunKey(runKey);
     }
 
-    return { eventId, subagentId };
+    return { eventId, subagentId, recorded: true };
   }
 
   resetClosed(sessionId: string, agentId?: string): ResetClosedResult {
@@ -700,11 +709,11 @@ function toolStateChangeFromPayload(eventName: SupportedEvent, payload: HookInpu
 }
 
 function isCloseAgentTool(toolName: string): boolean {
-  return toolName === "close_agent" || toolName.endsWith("__close_agent");
+  return toolName === "close_agent" || toolName.endsWith("__close_agent") || toolName.endsWith(".close_agent");
 }
 
 function isResumeAgentTool(toolName: string): boolean {
-  return toolName === "resume_agent" || toolName.endsWith("__resume_agent");
+  return toolName === "resume_agent" || toolName.endsWith("__resume_agent") || toolName.endsWith(".resume_agent");
 }
 
 function isSuccessfulToolResponse(value: unknown, requiredStatusField: string): boolean {
