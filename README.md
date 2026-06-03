@@ -9,7 +9,7 @@ Useful when a long Codex task fans out into multiple subagents and you want a co
 ## Run
 
 ```sh
-npx -y subagent-auto-manager
+npx -y subagent-auto-manager@latest
 ```
 
 Node.js 22.14.0 or newer is required because the package uses the built-in `node:sqlite` module.
@@ -27,7 +27,7 @@ Add this to Codex hooks config, for example project `.codex/hooks.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y subagent-auto-manager hook",
+            "command": "npx -y subagent-auto-manager@latest hook",
             "statusMessage": "Recording subagent start"
           }
         ]
@@ -39,7 +39,7 @@ Add this to Codex hooks config, for example project `.codex/hooks.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y subagent-auto-manager hook",
+            "command": "npx -y subagent-auto-manager@latest hook",
             "statusMessage": "Recording subagent stop"
           }
         ]
@@ -51,7 +51,7 @@ Add this to Codex hooks config, for example project `.codex/hooks.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y subagent-auto-manager hook",
+            "command": "npx -y subagent-auto-manager@latest hook",
             "statusMessage": "Recording subagent close/resume"
           }
         ]
@@ -76,38 +76,56 @@ After changing a non-managed hook, open `/hooks` in Codex and trust the updated 
 List currently running, not-closed subagents for the current Codex thread:
 
 ```sh
-npx -y subagent-auto-manager
+npx -y subagent-auto-manager@latest
 ```
 
 List all running and historical subagents:
 
 ```sh
-npx -y subagent-auto-manager --all
+npx -y subagent-auto-manager@latest --all
 ```
 
 List only stopped subagents:
 
 ```sh
-npx -y subagent-auto-manager --stopped
+npx -y subagent-auto-manager@latest --stopped
 ```
 
 List only closed subagent threads:
 
 ```sh
-npx -y subagent-auto-manager --closed
+npx -y subagent-auto-manager@latest --closed
 ```
 
 Reset closed marks for the current session, or one agent:
 
 ```sh
-npx -y subagent-auto-manager reset
-npx -y subagent-auto-manager reset --agent 019e87b0-d695-7902-96e1-9672e0a12db6
+npx -y subagent-auto-manager@latest reset
+npx -y subagent-auto-manager@latest reset --agent 019e87b0-d695-7902-96e1-9672e0a12db6
+```
+
+Wait until every listed subagent has emitted `SubagentStop`:
+
+```sh
+npx -y subagent-auto-manager@latest wait 019e87b0-d695-7902-96e1-9672e0a12db6 019e87b0-9c23-72d9-bcb1-4907652aa0ab
+```
+
+The built-in Codex subagent wait tool returns when one target completes. This CLI command polls the hook ledger and returns only when all requested targets are stopped. It exits non-zero on timeout and reports any still-running or missing targets:
+
+```sh
+npx -y subagent-auto-manager@latest wait --agent 019e87b0-d695-7902-96e1-9672e0a12db6 --agent 019e87b0-9c23-72d9-bcb1-4907652aa0ab --timeout-ms 600000 --text
+```
+
+If no explicit targets are provided, `wait` snapshots the current running, not-closed agents for the session and waits for that set:
+
+```sh
+npx -y subagent-auto-manager@latest wait --timeout-ms 600000
 ```
 
 Use an explicit session or project directory when needed:
 
 ```sh
-npx -y subagent-auto-manager --session 019e87b0-d695-7902-96e1-9672e0a12db6 --cwd /path/to/project
+npx -y subagent-auto-manager@latest --session 019e87b0-d695-7902-96e1-9672e0a12db6 --cwd /path/to/project
 ```
 
 Default output is pretty medium-detail JSON, filtered to running agents that have not been closed. Medium output keeps only the operational subagent id plus recall fields: agent type, prompt, status, closed state, timing, model, cwd, and last message.
@@ -136,13 +154,13 @@ Default output is pretty medium-detail JSON, filtered to running agents that hav
 YAML output is available with `--yaml`:
 
 ```sh
-npx -y subagent-auto-manager --yaml
+npx -y subagent-auto-manager@latest --yaml
 ```
 
 Full-detail output is available with `--full` or `--detail full`. It includes every stored run field plus parsed raw start/stop/close hook payloads:
 
 ```sh
-npx -y subagent-auto-manager --yaml --full
+npx -y subagent-auto-manager@latest --yaml --full
 ```
 
 Compact text output is also available with `--text`.

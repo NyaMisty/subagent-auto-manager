@@ -11,13 +11,45 @@ import { toYaml } from "./yaml.js";
 import type { SubagentRun } from "./types.js";
 
 interface CliOptions {
-  command: "list" | "running" | "reset" | "hook" | "help" | "version";
+  command: "list" | "running" | "reset" | "wait" | "hook" | "help" | "version";
   session?: string;
   cwd?: string;
   agent?: string;
+  waitTargets: string[];
+  waitAllRunning: boolean;
+  timeoutMs: number;
+  intervalMs: number;
   output: "json" | "yaml" | "text";
   detail: DetailLevel;
   status: "running" | "stopped" | "closed" | "all";
+}
+
+interface WaitTargetStatus {
+  target: string;
+  state: "stopped" | "running" | "missing";
+  agentId: string | null;
+  subagentId: string | null;
+  runKey: string | null;
+  agentType: string | null;
+  closed: boolean | null;
+  startTime: string | null;
+  stopTime: string | null;
+  durationMs: number | null;
+  lastAssistantMessage: string | null;
+}
+
+interface WaitResult {
+  summary: {
+    sessionId: string;
+    complete: boolean;
+    total: number;
+    stopped: number;
+    running: number;
+    missing: number;
+    timeoutMs: number;
+    elapsedMs: number;
+  };
+  targets: WaitTargetStatus[];
 }
 
 export async function main(argv = process.argv.slice(2), env = process.env): Promise<void> {
@@ -58,6 +90,15 @@ export async function main(argv = process.argv.slice(2), env = process.env): Pro
       return;
     }
 
+    if (options.command === "wait") {
+      const result = await waitForAgents(ledger, sessionId, options);
+      writeWaitResult(result, options.output);
+      if (!result.summary.complete) {
+        process.exitCode = 1;
+      }
+      return;
+    }
+
     const summary = ledger.summary(sessionId);
     const runs = filterRuns(ledger.listSession(sessionId, true), options.status);
     const result = buildOutput(summary, runs, options.detail);
@@ -77,6 +118,10 @@ export async function main(argv = process.argv.slice(2), env = process.env): Pro
 function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
     command: "running",
+    waitTargets: [],
+    waitAllRunning: false,
+    timeoutMs: 30000,
+    intervalMs: 1000,
     output: "json",
     detail: "medium",
     status: "running"
@@ -84,7 +129,7 @@ function parseArgs(argv: string[]): CliOptions {
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === "list" || arg === "running" || arg === "reset" || arg === "hook") {
+    if (arg === "list" || arg === "running" || arg === "reset" || arg === "wait" || arg === "hook") {
       options.command = arg;
       if (arg === "list") {
         options.status = "all";
@@ -121,7 +166,16 @@ function parseArgs(argv: string[]): CliOptions {
     }
 
     if (arg === "--all") {
-      options.status = "all";
+      if (options.command === "wait") {
+        options.waitAllRunning = true;
+      } else {
+        options.status = "all";
+      }
+      continue;
+    }
+
+    if (arg === "--all-running") {
+      options.waitAllRunning = true;
       continue;
     }
 
@@ -216,6 +270,7 @@ function parseArgs(argv: string[]): CliOptions {
         throw new Error(`${arg} requires a value`);
       }
       options.agent = value;
+      options.waitTargets.push(value);
       index += 1;
       continue;
     }
@@ -223,13 +278,60 @@ function parseArgs(argv: string[]): CliOptions {
     let parsedAgent = false;
     for (const prefix of ["--agent=", "--agent-id=", "--subagent=", "--subagent-id="]) {
       if (arg.startsWith(prefix)) {
-        options.agent = arg.slice(prefix.length);
+        const value = arg.slice(prefix.length);
+        options.agent = value;
+        options.waitTargets.push(value);
         parsedAgent = true;
         break;
       }
     }
 
     if (parsedAgent) {
+      continue;
+    }
+
+    if (arg === "--timeout-ms" || arg === "--timeout") {
+      const value = argv[index + 1];
+      if (!value) {
+        throw new Error(`${arg} requires a value`);
+      }
+      options.timeoutMs = parseMilliseconds(value, arg);
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith("--timeout-ms=")) {
+      options.timeoutMs = parseMilliseconds(arg.slice("--timeout-ms=".length), "--timeout-ms");
+      continue;
+    }
+
+    if (arg.startsWith("--timeout=")) {
+      options.timeoutMs = parseMilliseconds(arg.slice("--timeout=".length), "--timeout");
+      continue;
+    }
+
+    if (arg === "--interval-ms" || arg === "--poll-ms") {
+      const value = argv[index + 1];
+      if (!value) {
+        throw new Error(`${arg} requires a value`);
+      }
+      options.intervalMs = parseMilliseconds(value, arg);
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith("--interval-ms=")) {
+      options.intervalMs = parseMilliseconds(arg.slice("--interval-ms=".length), "--interval-ms");
+      continue;
+    }
+
+    if (arg.startsWith("--poll-ms=")) {
+      options.intervalMs = parseMilliseconds(arg.slice("--poll-ms=".length), "--poll-ms");
+      continue;
+    }
+
+    if (options.command === "wait" && !arg.startsWith("-")) {
+      options.waitTargets.push(arg);
       continue;
     }
 
@@ -253,6 +355,164 @@ function parseDetail(value: string): DetailLevel {
   }
 
   throw new Error(`unsupported detail level: ${value}`);
+}
+
+function parseMilliseconds(value: string, label: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`${label} requires a non-negative number of milliseconds`);
+  }
+
+  return Math.floor(parsed);
+}
+
+async function waitForAgents(
+  ledger: { listSession(sessionId: string, includeAll?: boolean): SubagentRun[] },
+  sessionId: string,
+  options: CliOptions
+): Promise<WaitResult> {
+  const startMs = Date.now();
+  let targets = uniqueStrings(options.waitTargets);
+  if (targets.length === 0 || options.waitAllRunning) {
+    const runningTargets = ledger
+      .listSession(sessionId, true)
+      .filter((run) => run.status === "running" && !run.closed)
+      .map((run) => run.agentId ?? run.subagentId);
+    targets = uniqueStrings([...targets, ...runningTargets]);
+  }
+
+  while (true) {
+    const statuses = resolveWaitTargets(ledger.listSession(sessionId, true), sessionId, targets);
+    const elapsedMs = Date.now() - startMs;
+    const result = buildWaitResult(sessionId, statuses, options.timeoutMs, elapsedMs);
+    if (result.summary.complete || elapsedMs >= options.timeoutMs) {
+      return result;
+    }
+
+    const remainingMs = options.timeoutMs - elapsedMs;
+    await delay(Math.min(options.intervalMs, remainingMs));
+  }
+}
+
+function resolveWaitTargets(runs: SubagentRun[], sessionId: string, targets: string[]): WaitTargetStatus[] {
+  return targets.map((target) => {
+    const run = runs.find((candidate) => matchesRunTarget(candidate, sessionId, target));
+    if (!run) {
+      return {
+        target,
+        state: "missing",
+        agentId: null,
+        subagentId: null,
+        runKey: null,
+        agentType: null,
+        closed: null,
+        startTime: null,
+        stopTime: null,
+        durationMs: null,
+        lastAssistantMessage: null
+      };
+    }
+
+    return {
+      target,
+      state: run.status === "stopped" ? "stopped" : "running",
+      agentId: run.agentId,
+      subagentId: run.subagentId,
+      runKey: run.runKey,
+      agentType: run.agentType,
+      closed: run.closed,
+      startTime: run.startTime,
+      stopTime: run.stopTime,
+      durationMs: run.durationMs,
+      lastAssistantMessage: run.lastAssistantMessage
+    };
+  });
+}
+
+function matchesRunTarget(run: SubagentRun, sessionId: string, target: string): boolean {
+  return (
+    run.agentId === target ||
+    run.subagentId === target ||
+    run.runKey === target ||
+    run.runKey === `${sessionId}:${target}`
+  );
+}
+
+function buildWaitResult(sessionId: string, targets: WaitTargetStatus[], timeoutMs: number, elapsedMs: number): WaitResult {
+  const stopped = targets.filter((target) => target.state === "stopped").length;
+  const running = targets.filter((target) => target.state === "running").length;
+  const missing = targets.filter((target) => target.state === "missing").length;
+  return {
+    summary: {
+      sessionId,
+      complete: running === 0 && missing === 0,
+      total: targets.length,
+      stopped,
+      running,
+      missing,
+      timeoutMs,
+      elapsedMs
+    },
+    targets
+  };
+}
+
+function writeWaitResult(result: WaitResult, output: "json" | "yaml" | "text"): void {
+  if (output === "json") {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return;
+  }
+
+  if (output === "yaml") {
+    process.stdout.write(toYaml(result));
+    return;
+  }
+
+  process.stdout.write(formatWaitResult(result));
+}
+
+function formatWaitResult(result: WaitResult): string {
+  const summary = result.summary;
+  const lines = [
+    summary.complete
+      ? `wait complete session=${short(summary.sessionId)} targets=${summary.total} elapsed_ms=${summary.elapsedMs}`
+      : `wait timeout session=${short(summary.sessionId)} targets=${summary.total} stopped=${summary.stopped} running=${summary.running} missing=${summary.missing} elapsed_ms=${summary.elapsedMs} timeout_ms=${summary.timeoutMs}`
+  ];
+
+  const visibleTargets = summary.complete ? result.targets : result.targets.filter((target) => target.state !== "stopped");
+  for (const target of visibleTargets) {
+    const label = target.state === "stopped" ? "DONE" : target.state === "running" ? "RUN" : "MISS";
+    const name = target.agentId ?? target.subagentId ?? target.target;
+    const type = target.agentType ? ` ${target.agentType}` : "";
+    lines.push(`${label} ${short(name)}${type}`);
+  }
+
+  return `${lines.join("\n")}\n`;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    if (seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    result.push(value);
+  }
+  return result;
+}
+
+function short(value: string): string {
+  return value.length <= 8 ? value : value.slice(0, 8);
+}
+
+function delay(ms: number): Promise<void> {
+  if (ms <= 0) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function filterRuns(runs: SubagentRun[], status: "running" | "stopped" | "closed" | "all"): SubagentRun[] {
@@ -281,7 +541,7 @@ function writeHints(
   ];
   process.stderr.write(`[subagent-auto-manager] ${pieces.join(" ")} shown=${shown}/${total}\n`);
 
-  const base = "npx -y subagent-auto-manager";
+  const base = "npx -y subagent-auto-manager@latest";
   if (options.status === "running") {
     process.stderr.write(`[subagent-auto-manager] next: use \`${base} --all\` to include stopped agents, \`${base} --stopped\` for completed agents, or \`${base} --closed\` for closed threads.\n`);
   } else if (options.status === "stopped") {
@@ -297,6 +557,7 @@ function helpText(): string {
   return `Usage:
   subagent-auto-manager [running|list] [--session <id>] [--cwd <project>] [--status running|stopped|closed|all] [--json|--yaml|--text] [--detail medium|full]
   subagent-auto-manager reset [--agent <id>] [--session <id>] [--cwd <project>] [--json|--yaml|--text]
+  subagent-auto-manager wait [agent-id ...] [--all] [--timeout-ms <ms>] [--interval-ms <ms>] [--session <id>] [--cwd <project>] [--json|--yaml|--text]
   subagent-auto-manager hook
 
 Defaults:
@@ -306,9 +567,10 @@ Defaults:
   Detail defaults to medium. Use --full or --detail full for all stored fields and raw payloads.
   Status defaults to running. Use --all or list to include stopped agents. Use --closed to list closed agent threads.
   reset clears closed marks for the current session, or one agent when --agent is provided.
+  wait polls the hook ledger until every target is stopped. With no explicit targets, wait snapshots current running, not-closed agents.
 
 Hook config command:
-  npx -y subagent-auto-manager hook
+  npx -y subagent-auto-manager@latest hook
 `;
 }
 

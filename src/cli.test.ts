@@ -181,13 +181,75 @@ test("filters closed agents and resets one closed mark", async () => {
   }
 });
 
-function runCli(args: string[], env: NodeJS.ProcessEnv): { stdout: string; stderr: string } {
+test("wait returns when every target is stopped", async () => {
+  const root = tempRoot();
+  seedRun(root, "session-wait-done", "stopped", "agent-a");
+  seedRun(root, "session-wait-done", "stopped", "agent-b");
+  const result = runCli(["wait", "agent-a", "--agent", "agent-b", "--cwd", root, "--timeout-ms", "0"], {
+    CODEX_THREAD_ID: "session-wait-done"
+  });
+
+  try {
+    const parsed = JSON.parse(result.stdout);
+    assert.equal(parsed.summary.complete, true);
+    assert.equal(parsed.summary.stopped, 2);
+    assert.equal(parsed.summary.running, 0);
+    assert.equal(parsed.summary.missing, 0);
+    assert.deepEqual(
+      parsed.targets.map((target: { target: string; state: string }) => [target.target, target.state]),
+      [
+        ["agent-a", "stopped"],
+        ["agent-b", "stopped"]
+      ]
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("wait times out for running or missing targets", async () => {
+  const root = tempRoot();
+  seedRun(root, "session-wait-timeout", "running", "agent-running");
+  seedRun(root, "session-wait-timeout", "stopped", "agent-done");
+  const result = runCli(
+    ["wait", "agent-running", "agent-missing", "--cwd", root, "--timeout-ms", "0", "--text"],
+    { CODEX_THREAD_ID: "session-wait-timeout" },
+    1
+  );
+
+  try {
+    assert.match(result.stdout, /^wait timeout session=session- targets=2 stopped=0 running=1 missing=1 /);
+    assert.match(result.stdout, /RUN agent-ru explorer/);
+    assert.match(result.stdout, /MISS agent-mi/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("wait snapshots current running agents when no targets are provided", async () => {
+  const root = tempRoot();
+  seedRun(root, "session-wait-snapshot", "running", "agent-open");
+  seedRun(root, "session-wait-snapshot", "stopped", "agent-done");
+  closeRun(root, "session-wait-snapshot", "agent-open");
+  const result = runCli(["wait", "--cwd", root, "--timeout-ms", "0"], { CODEX_THREAD_ID: "session-wait-snapshot" });
+
+  try {
+    const parsed = JSON.parse(result.stdout);
+    assert.equal(parsed.summary.complete, true);
+    assert.equal(parsed.summary.total, 0);
+    assert.deepEqual(parsed.targets, []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+function runCli(args: string[], env: NodeJS.ProcessEnv, expectedStatus = 0): { stdout: string; stderr: string } {
   const cliPath = join(dirname(fileURLToPath(import.meta.url)), "cli.js");
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     env: { ...process.env, ...env },
     encoding: "utf8"
   });
-  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.status, expectedStatus, result.stderr);
   return {
     stdout: result.stdout,
     stderr: result.stderr

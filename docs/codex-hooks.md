@@ -17,7 +17,7 @@ The event name is read from `hook_event_name`.
 Recommended command:
 
 ```sh
-npx -y subagent-auto-manager hook
+npx -y subagent-auto-manager@latest hook
 ```
 
 Example `hooks.json`:
@@ -31,7 +31,7 @@ Example `hooks.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y subagent-auto-manager hook",
+            "command": "npx -y subagent-auto-manager@latest hook",
             "statusMessage": "Recording subagent start"
           }
         ]
@@ -43,7 +43,7 @@ Example `hooks.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y subagent-auto-manager hook",
+            "command": "npx -y subagent-auto-manager@latest hook",
             "statusMessage": "Recording subagent stop"
           }
         ]
@@ -55,7 +55,7 @@ Example `hooks.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y subagent-auto-manager hook",
+            "command": "npx -y subagent-auto-manager@latest hook",
             "statusMessage": "Recording subagent close/resume"
           }
         ]
@@ -171,3 +171,13 @@ Closed state is inferred from `PostToolUse`:
 - `close_agent` with `tool_input.target` and a successful response marks that target `closed`.
 - `resume_agent` with `tool_input.id` and a successful response clears `closed`.
 - `close_agent` responses whose `previous_status` is `not_found` are ignored because they do not prove an open tracked agent was closed.
+
+## Wait-All Helper
+
+`SubagentStop` rows also support a wait-all CLI helper:
+
+```sh
+npx -y subagent-auto-manager@latest wait --agent agent-a --agent agent-b --timeout-ms 600000
+```
+
+The helper polls the project ledger and returns only when every requested target is `stopped`. Unlike Codex's built-in multi-target wait tool, which returns when one target completes, this helper treats running and missing targets as incomplete and exits non-zero when the timeout expires.
