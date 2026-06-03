@@ -6,7 +6,7 @@ export interface FormatOptions {
 
 export function formatSession(summary: SessionSummary, runs: SubagentRun[], options: FormatOptions = {}): string {
   const lines = [
-    `session ${short(summary.sessionId)} total=${summary.total} running=${summary.running} stopped=${summary.stopped}`
+    `session ${short(summary.sessionId)} total=${summary.total} running=${summary.running} stopped=${summary.stopped} closed=${summary.closed}`
   ];
 
   if (runs.length === 0) {
@@ -17,7 +17,7 @@ export function formatSession(summary: SessionSummary, runs: SubagentRun[], opti
   for (const run of runs) {
     const name = run.agentId ?? run.subagentId;
     const type = run.agentType ? ` ${run.agentType}` : "";
-    const status = run.status === "running" ? "RUN" : "DONE";
+    const status = run.closed ? "CLOSED" : run.status === "running" ? "RUN" : "DONE";
     const elapsed = elapsedLabel(run, options.now ?? new Date());
     const prompt = run.prompt ? ` ${truncate(oneLine(run.prompt), 72)}` : "";
     lines.push(`${status} ${short(name)}${type} ${elapsed}${prompt}`);

@@ -2,7 +2,7 @@
 
 Small Codex hook + CLI for tracking subagents in a project-local SQLite ledger.
 
-It records `SubagentStart` and `SubagentStop` payloads, then lets you quickly see which subagents are still running and what already finished for the current Codex session.
+It records `SubagentStart`, `SubagentStop`, and selected `PostToolUse` payloads, then lets you quickly see which subagents are still running, finished, or closed for the current Codex session.
 
 Useful when a long Codex task fans out into multiple subagents and you want a compact per-session ledger without reading rollout logs.
 
@@ -44,16 +44,36 @@ Add this to Codex hooks config, for example project `.codex/hooks.json`:
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "close_agent|resume_agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx -y subagent-auto-manager hook",
+            "statusMessage": "Recording subagent close/resume"
+          }
+        ]
+      }
     ]
   }
 }
 ```
 
-The command reads Codex JSON from stdin, stores the full payload, and writes `{}` to stdout so Codex can continue normally.
+The command reads Codex JSON from stdin, stores the full payload, and writes `{}` to stdout so Codex can continue normally. `SubagentStop` tracks execution completion. `PostToolUse` tracks `close_agent` and `resume_agent` tool calls, which is the available signal for whether the parent closed or reopened a subagent thread.
+
+For a global install, put the same `hooks` block in `~/.codex/hooks.json`. On Windows this is typically:
+
+```text
+C:\Users\Misty\.codex\hooks.json
+```
+
+After changing a non-managed hook, open `/hooks` in Codex and trust the updated hook definitions if Codex marks them for review.
 
 ## Usage
 
-List currently running subagents for the current Codex thread:
+List currently running, not-closed subagents for the current Codex thread:
 
 ```sh
 npx -y subagent-auto-manager
@@ -71,19 +91,33 @@ List only stopped subagents:
 npx -y subagent-auto-manager --stopped
 ```
 
+List only closed subagent threads:
+
+```sh
+npx -y subagent-auto-manager --closed
+```
+
+Reset closed marks for the current session, or one agent:
+
+```sh
+npx -y subagent-auto-manager reset
+npx -y subagent-auto-manager reset --agent 019e87b0-d695-7902-96e1-9672e0a12db6
+```
+
 Use an explicit session or project directory when needed:
 
 ```sh
 npx -y subagent-auto-manager --session 019e87b0-d695-7902-96e1-9672e0a12db6 --cwd /path/to/project
 ```
 
-Default output is pretty medium-detail JSON, filtered to running agents. Medium output keeps only the operational subagent id plus recall fields: agent type, prompt, status, timing, model, cwd, and last message.
+Default output is pretty medium-detail JSON, filtered to running agents that have not been closed. Medium output keeps only the operational subagent id plus recall fields: agent type, prompt, status, closed state, timing, model, cwd, and last message.
 
 ```json
 {
   "summary": {
     "running": 1,
     "stopped": 1,
+    "closed": 0,
     "total": 2,
     "shown": 1
   },
@@ -92,6 +126,7 @@ Default output is pretty medium-detail JSON, filtered to running agents. Medium 
       "agentId": "agent-running",
       "agentType": "general",
       "status": "running",
+      "closed": false,
       "prompt": "review files and report issues"
     }
   ]
@@ -104,7 +139,7 @@ YAML output is available with `--yaml`:
 npx -y subagent-auto-manager --yaml
 ```
 
-Full-detail output is available with `--full` or `--detail full`. It includes every stored run field plus parsed raw start/stop hook payloads:
+Full-detail output is available with `--full` or `--detail full`. It includes every stored run field plus parsed raw start/stop/close hook payloads:
 
 ```sh
 npx -y subagent-auto-manager --yaml --full
@@ -124,7 +159,7 @@ Each project stores its ledger below:
 
 The CLI isolates sessions with `CODEX_THREAD_ID` by default. Hooks use the `session_id` from the Codex hook JSON.
 
-The database stores queryable columns for common Codex hook fields such as `session_id`, `turn_id`, `agent_id`, `agent_type`, `cwd`, `model`, `permission_mode`, `transcript_path`, `agent_transcript_path`, `prompt`, `last_assistant_message`, and `stop_hook_active`, plus the complete raw payload JSON for every event.
+The database stores queryable columns for common Codex hook fields such as `session_id`, `turn_id`, `agent_id`, `agent_type`, `cwd`, `model`, `permission_mode`, `transcript_path`, `agent_transcript_path`, `prompt`, `last_assistant_message`, `stop_hook_active`, `tool_name`, `tool_use_id`, and `close_target`, plus the complete raw payload JSON for every event.
 
 ## Publishing
 

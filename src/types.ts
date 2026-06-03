@@ -1,4 +1,4 @@
-export const SUPPORTED_EVENTS = ["SubagentStart", "SubagentStop"] as const;
+export const SUPPORTED_EVENTS = ["SubagentStart", "SubagentStop", "PostToolUse"] as const;
 
 export type SupportedEvent = (typeof SUPPORTED_EVENTS)[number];
 
@@ -9,6 +9,10 @@ export interface HookInput {
   hook_event_name?: string;
   prompt?: string;
   stop_hook_active?: boolean;
+  tool_name?: string;
+  tool_use_id?: string;
+  tool_input?: unknown;
+  tool_response?: unknown;
   [key: string]: unknown;
 }
 
@@ -29,16 +33,21 @@ export interface SubagentRun {
   startTime: string;
   stopTime: string | null;
   status: "running" | "stopped";
+  closed: boolean;
+  closeEventId: number | null;
+  closeTime: string | null;
   durationMs: number | null;
   prompt: string | null;
   lastAssistantMessage: string | null;
   startPayload: string;
   stopPayload: string | null;
+  closePayload: string | null;
 }
 
 export interface SessionSummary {
   sessionId: string;
   running: number;
   stopped: number;
+  closed: number;
   total: number;
 }

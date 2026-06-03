@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`subagent-auto-manager` records Codex subagent lifecycle hook payloads into a project-local SQLite ledger and exposes filtered medium or full detail JSON/YAML CLI views by session.
+`subagent-auto-manager` records Codex subagent lifecycle hook payloads into a project-local SQLite ledger and exposes filtered medium or full detail JSON/YAML CLI views by session. It also records `PostToolUse` calls for `close_agent` and `resume_agent` so closed thread state can be tracked separately from subagent turn completion.
 
 ## Package Shape
 
@@ -30,6 +30,7 @@ The database stores:
 - one row per hook payload in `subagent_events`
 - one reconstructed run per subagent in `subagent_runs`
 - explicit columns for common Codex fields
+- `closed`, `close_event_id`, `close_time`, and raw close payload fields for thread-close state
 - the complete compact raw payload JSON
 
 ## Session Isolation
@@ -40,6 +41,8 @@ The CLI defaults to `CODEX_THREAD_ID`, running-only filtering, medium detail, an
 
 ```sh
 npx -y subagent-auto-manager --session <session-id> --cwd <project> --all --yaml --full
+npx -y subagent-auto-manager --session <session-id> --cwd <project> --closed
+npx -y subagent-auto-manager reset --session <session-id> --cwd <project> --agent <agent-id>
 ```
 
 ## Verification
@@ -60,6 +63,13 @@ Manual hook stdin smoke:
 
 $env:CODEX_THREAD_ID='manual-smoke'
 npx -y subagent-auto-manager --cwd . --all
+
+@'
+{"hook_event_name":"PostToolUse","session_id":"manual-smoke","cwd":"D:\\Workspaces\\UtilWorkspace\\LLM\\subagent_auto_manager","tool_name":"close_agent","tool_input":{"target":"agent-1"},"tool_response":{"previous_status":"completed"}}
+'@ | npx -y subagent-auto-manager hook
+
+npx -y subagent-auto-manager --cwd . --closed
+npx -y subagent-auto-manager reset --cwd . --agent agent-1
 ```
 
 ## Real Codex Verification
@@ -77,7 +87,7 @@ Ordinary interactive `codex` was also verified through WSL `screen` while explic
 The run created `<project>/.codex/subagent_auto_manager.db/ledger.sqlite3`. With `CODEX_THREAD_ID=019e894e-a420-75b2-8212-91b56a532b05`, `npx -y subagent-auto-manager --cwd . --text` returned:
 
 ```text
-session 019e894e total=1 running=0 stopped=1
+session 019e894e total=1 running=0 stopped=1 closed=0
 DONE 019e894e explorer 12s
 ```
 

@@ -9,6 +9,7 @@ test("formats nested JSON-compatible values as YAML", () => {
         sessionId: "session-yaml",
         running: 1,
         stopped: 0,
+        closed: 0,
         total: 1
       },
       runs: [
@@ -26,6 +27,7 @@ test("formats nested JSON-compatible values as YAML", () => {
       "  sessionId: \"session-yaml\"",
       "  running: 1",
       "  stopped: 0",
+      "  closed: 0",
       "  total: 1",
       "runs:",
       "  -",

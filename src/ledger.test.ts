@@ -55,6 +55,7 @@ test("records start and stop events with full payload JSON", () => {
       sessionId: "session-a",
       running: 0,
       stopped: 1,
+      closed: 0,
       total: 1
     });
 
@@ -73,6 +74,144 @@ test("records start and stop events with full payload JSON", () => {
     assert.equal(events.length, 2);
     assert.equal(events[0]?.event_name, "SubagentStart");
     assert.equal(events[1]?.event_name, "SubagentStop");
+  } finally {
+    ledger.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("marks a subagent closed from successful close_agent PostToolUse and clears it on resume/reset", () => {
+  const root = tempRoot();
+  const ledger = SubagentLedger.open(root);
+
+  try {
+    ledger.record({
+      eventName: "SubagentStart",
+      sessionId: "session-close",
+      projectRoot: root,
+      payload: {
+        hook_event_name: "SubagentStart",
+        session_id: "session-close",
+        agent_id: "agent-close",
+        agent_type: "explorer",
+        cwd: root,
+        prompt: "inspect package.json"
+      }
+    });
+
+    ledger.record({
+      eventName: "PostToolUse",
+      sessionId: "session-close",
+      projectRoot: root,
+      payload: {
+        hook_event_name: "PostToolUse",
+        session_id: "session-close",
+        cwd: root,
+        tool_name: "close_agent",
+        tool_use_id: "call-close",
+        tool_input: {
+          target: "agent-close"
+        },
+        tool_response: "{\"previous_status\":{\"completed\":\"done\"}}"
+      }
+    });
+
+    assert.equal(ledger.summary("session-close").closed, 1);
+    let [run] = ledger.listSession("session-close");
+    assert.equal(run.closed, true);
+    assert.notEqual(run.closeTime, null);
+    assert.match(run.closePayload ?? "", /"tool_name":"close_agent"/);
+
+    ledger.record({
+      eventName: "PostToolUse",
+      sessionId: "session-close",
+      projectRoot: root,
+      payload: {
+        hook_event_name: "PostToolUse",
+        session_id: "session-close",
+        cwd: root,
+        tool_name: "resume_agent",
+        tool_use_id: "call-resume",
+        tool_input: {
+          id: "agent-close"
+        },
+        tool_response: "{\"status\":\"running\"}"
+      }
+    });
+
+    [run] = ledger.listSession("session-close");
+    assert.equal(run.closed, false);
+    assert.equal(run.closeTime, null);
+
+    ledger.record({
+      eventName: "PostToolUse",
+      sessionId: "session-close",
+      projectRoot: root,
+      payload: {
+        hook_event_name: "PostToolUse",
+        session_id: "session-close",
+        cwd: root,
+        tool_name: "multi_agent_v1__close_agent",
+        tool_input: {
+          target: "agent-close"
+        },
+        tool_response: {
+          structuredContent: {
+            previous_status: "running"
+          },
+          isError: false
+        }
+      }
+    });
+
+    assert.deepEqual(ledger.resetClosed("session-close", "agent-close"), {
+      matched: 1,
+      reset: 1
+    });
+    [run] = ledger.listSession("session-close");
+    assert.equal(run.closed, false);
+  } finally {
+    ledger.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("does not mark close_agent with not_found previous status as closed", () => {
+  const root = tempRoot();
+  const ledger = SubagentLedger.open(root);
+
+  try {
+    ledger.record({
+      eventName: "SubagentStart",
+      sessionId: "session-not-found",
+      projectRoot: root,
+      payload: {
+        hook_event_name: "SubagentStart",
+        session_id: "session-not-found",
+        agent_id: "agent-missing",
+        cwd: root
+      }
+    });
+    ledger.record({
+      eventName: "PostToolUse",
+      sessionId: "session-not-found",
+      projectRoot: root,
+      payload: {
+        hook_event_name: "PostToolUse",
+        session_id: "session-not-found",
+        cwd: root,
+        tool_name: "close_agent",
+        tool_input: {
+          target: "agent-missing"
+        },
+        tool_response: {
+          previous_status: "not_found"
+        }
+      }
+    });
+
+    assert.equal(ledger.summary("session-not-found").closed, 0);
+    assert.equal(ledger.listSession("session-not-found")[0]?.closed, false);
   } finally {
     ledger.close();
     rmSync(root, { recursive: true, force: true });

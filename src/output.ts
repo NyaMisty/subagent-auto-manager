@@ -18,6 +18,7 @@ function mediumSummary(summary: SessionSummary, runs: SubagentRun[]): Record<str
   return {
     running: summary.running,
     stopped: summary.stopped,
+    closed: summary.closed,
     total: summary.total,
     shown: runs.length
   };
@@ -35,9 +36,11 @@ function mediumRun(run: SubagentRun): Record<string, unknown> {
     agentId: run.agentId ?? run.subagentId,
     agentType: run.agentType,
     status: run.status,
+    closed: run.closed,
     prompt: run.prompt,
     startTime: run.startTime,
     stopTime: run.stopTime,
+    closeTime: run.closeTime,
     durationMs: run.durationMs,
     lastAssistantMessage: run.lastAssistantMessage,
     model: run.model,
@@ -49,7 +52,8 @@ function fullRun(run: SubagentRun): Record<string, unknown> {
   return {
     ...run,
     startPayload: parsePayload(run.startPayload),
-    stopPayload: run.stopPayload === null ? null : parsePayload(run.stopPayload)
+    stopPayload: run.stopPayload === null ? null : parsePayload(run.stopPayload),
+    closePayload: run.closePayload === null ? null : parsePayload(run.closePayload)
   };
 }
 

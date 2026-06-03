@@ -11,12 +11,13 @@ import { toYaml } from "./yaml.js";
 import type { SubagentRun } from "./types.js";
 
 interface CliOptions {
-  command: "list" | "running" | "hook" | "help" | "version";
+  command: "list" | "running" | "reset" | "hook" | "help" | "version";
   session?: string;
   cwd?: string;
+  agent?: string;
   output: "json" | "yaml" | "text";
   detail: DetailLevel;
-  status: "running" | "stopped" | "all";
+  status: "running" | "stopped" | "closed" | "all";
 }
 
 export async function main(argv = process.argv.slice(2), env = process.env): Promise<void> {
@@ -44,6 +45,19 @@ export async function main(argv = process.argv.slice(2), env = process.env): Pro
   const ledger = SubagentLedger.open(projectRoot);
 
   try {
+    if (options.command === "reset") {
+      const result = ledger.resetClosed(sessionId, options.agent);
+      if (options.output === "json") {
+        process.stdout.write(`${JSON.stringify({ sessionId, agentId: options.agent ?? null, ...result }, null, 2)}\n`);
+      } else if (options.output === "yaml") {
+        process.stdout.write(toYaml({ sessionId, agentId: options.agent ?? null, ...result }));
+      } else {
+        const target = options.agent ? ` agent=${options.agent}` : "";
+        process.stdout.write(`reset closed session=${sessionId}${target} matched=${result.matched} reset=${result.reset}\n`);
+      }
+      return;
+    }
+
     const summary = ledger.summary(sessionId);
     const runs = filterRuns(ledger.listSession(sessionId, true), options.status);
     const result = buildOutput(summary, runs, options.detail);
@@ -70,7 +84,7 @@ function parseArgs(argv: string[]): CliOptions {
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === "list" || arg === "running" || arg === "hook") {
+    if (arg === "list" || arg === "running" || arg === "reset" || arg === "hook") {
       options.command = arg;
       if (arg === "list") {
         options.status = "all";
@@ -118,6 +132,11 @@ function parseArgs(argv: string[]): CliOptions {
 
     if (arg === "--stopped") {
       options.status = "stopped";
+      continue;
+    }
+
+    if (arg === "--closed") {
+      options.status = "closed";
       continue;
     }
 
@@ -191,14 +210,37 @@ function parseArgs(argv: string[]): CliOptions {
       continue;
     }
 
+    if (arg === "--agent" || arg === "--agent-id" || arg === "--subagent" || arg === "--subagent-id") {
+      const value = argv[index + 1];
+      if (!value) {
+        throw new Error(`${arg} requires a value`);
+      }
+      options.agent = value;
+      index += 1;
+      continue;
+    }
+
+    let parsedAgent = false;
+    for (const prefix of ["--agent=", "--agent-id=", "--subagent=", "--subagent-id="]) {
+      if (arg.startsWith(prefix)) {
+        options.agent = arg.slice(prefix.length);
+        parsedAgent = true;
+        break;
+      }
+    }
+
+    if (parsedAgent) {
+      continue;
+    }
+
     throw new Error(`unknown argument: ${arg}`);
   }
 
   return options;
 }
 
-function parseStatus(value: string): "running" | "stopped" | "all" {
-  if (value === "running" || value === "stopped" || value === "all") {
+function parseStatus(value: string): "running" | "stopped" | "closed" | "all" {
+  if (value === "running" || value === "stopped" || value === "closed" || value === "all") {
     return value;
   }
 
@@ -213,12 +255,16 @@ function parseDetail(value: string): DetailLevel {
   throw new Error(`unsupported detail level: ${value}`);
 }
 
-function filterRuns(runs: SubagentRun[], status: "running" | "stopped" | "all"): SubagentRun[] {
+function filterRuns(runs: SubagentRun[], status: "running" | "stopped" | "closed" | "all"): SubagentRun[] {
   if (status === "all") {
     return runs;
   }
 
-  return runs.filter((run) => run.status === status);
+  if (status === "closed") {
+    return runs.filter((run) => run.closed);
+  }
+
+  return runs.filter((run) => run.status === status && (status !== "running" || !run.closed));
 }
 
 function writeHints(
@@ -237,9 +283,11 @@ function writeHints(
 
   const base = "npx -y subagent-auto-manager";
   if (options.status === "running") {
-    process.stderr.write(`[subagent-auto-manager] next: use \`${base} --all\` to include stopped agents, or \`${base} --stopped\` for completed agents only.\n`);
+    process.stderr.write(`[subagent-auto-manager] next: use \`${base} --all\` to include stopped agents, \`${base} --stopped\` for completed agents, or \`${base} --closed\` for closed threads.\n`);
   } else if (options.status === "stopped") {
     process.stderr.write(`[subagent-auto-manager] next: use \`${base} --running\` for active agents, or \`${base} --all\` for the full session list.\n`);
+  } else if (options.status === "closed") {
+    process.stderr.write(`[subagent-auto-manager] next: use \`${base} reset --agent <id>\` to clear one closed mark, or \`${base} reset\` to clear closed marks for the session.\n`);
   } else {
     process.stderr.write(`[subagent-auto-manager] next: use \`${base} --running\` for active agents only, or add \`--full\` for all stored fields.\n`);
   }
@@ -247,7 +295,8 @@ function writeHints(
 
 function helpText(): string {
   return `Usage:
-  subagent-auto-manager [running|list] [--session <id>] [--cwd <project>] [--status running|stopped|all] [--json|--yaml|--text] [--detail medium|full]
+  subagent-auto-manager [running|list] [--session <id>] [--cwd <project>] [--status running|stopped|closed|all] [--json|--yaml|--text] [--detail medium|full]
+  subagent-auto-manager reset [--agent <id>] [--session <id>] [--cwd <project>] [--json|--yaml|--text]
   subagent-auto-manager hook
 
 Defaults:
@@ -255,7 +304,8 @@ Defaults:
   --cwd defaults to the current working directory.
   Output defaults to JSON. Use --yaml for YAML.
   Detail defaults to medium. Use --full or --detail full for all stored fields and raw payloads.
-  Status defaults to running. Use --all or list to include stopped agents.
+  Status defaults to running. Use --all or list to include stopped agents. Use --closed to list closed agent threads.
+  reset clears closed marks for the current session, or one agent when --agent is provided.
 
 Hook config command:
   npx -y subagent-auto-manager hook

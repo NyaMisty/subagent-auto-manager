@@ -10,6 +10,7 @@ test("medium output keeps common recall and stats fields", () => {
   assert.deepEqual(output.summary, {
     running: 0,
     stopped: 1,
+    closed: 1,
     total: 1,
     shown: 1
   });
@@ -17,9 +18,11 @@ test("medium output keeps common recall and stats fields", () => {
     "agentId",
     "agentType",
     "status",
+    "closed",
     "prompt",
     "startTime",
     "stopTime",
+    "closeTime",
     "durationMs",
     "lastAssistantMessage",
     "model",
@@ -42,6 +45,7 @@ test("full output includes all run fields and parsed raw payloads", () => {
     sessionId: "session-a",
     running: 0,
     stopped: 1,
+    closed: 1,
     total: 1,
     shown: 1
   });
@@ -60,6 +64,10 @@ test("full output includes all run fields and parsed raw payloads", () => {
     hook_event_name: "SubagentStop",
     last_assistant_message: "done"
   });
+  assert.deepEqual(item.closePayload, {
+    hook_event_name: "PostToolUse",
+    tool_name: "close_agent"
+  });
 });
 
 function summary(): SessionSummary {
@@ -67,6 +75,7 @@ function summary(): SessionSummary {
     sessionId: "session-a",
     running: 0,
     stopped: 1,
+    closed: 1,
     total: 1
   };
 }
@@ -89,10 +98,14 @@ function run(): SubagentRun {
     startTime: "2026-06-02T17:08:29.524Z",
     stopTime: "2026-06-02T17:08:41.925Z",
     status: "stopped",
+    closed: true,
+    closeEventId: 3,
+    closeTime: "2026-06-02T17:08:42.000Z",
     durationMs: 12401,
     prompt: "inspect package.json",
     lastAssistantMessage: "done",
     startPayload: "{\"hook_event_name\":\"SubagentStart\",\"extra_field\":{\"nested\":true}}",
-    stopPayload: "{\"hook_event_name\":\"SubagentStop\",\"last_assistant_message\":\"done\"}"
+    stopPayload: "{\"hook_event_name\":\"SubagentStop\",\"last_assistant_message\":\"done\"}",
+    closePayload: "{\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"close_agent\"}"
   };
 }
