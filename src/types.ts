@@ -1,4 +1,4 @@
-export const SUPPORTED_EVENTS = ["SubagentStart", "SubagentStop", "PostToolUse", "Stop"] as const;
+export const SUPPORTED_EVENTS = ["SubagentStart", "SubagentStop", "PostToolUse"] as const;
 
 export type SupportedEvent = (typeof SUPPORTED_EVENTS)[number];
 

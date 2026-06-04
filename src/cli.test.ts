@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -243,83 +243,11 @@ test("wait snapshots current running agents when no targets are provided", async
   }
 });
 
-test("hook Stop replays close_agent tool calls from the transcript", async () => {
-  const root = tempRoot();
-  const transcriptPath = join(root, "parent.jsonl");
-  seedRun(root, "session-stop-replay", "stopped", "agent-close");
-  writeFileSync(
-    transcriptPath,
-    [
-      JSON.stringify({
-        timestamp: "2026-06-04T00:00:00.000Z",
-        type: "response_item",
-        payload: {
-          type: "function_call",
-          name: "close_agent",
-          namespace: "multi_agent_v1",
-          arguments: "{\"target\":\"agent-close\"}",
-          call_id: "call-close"
-        }
-      }),
-      JSON.stringify({
-        timestamp: "2026-06-04T00:00:01.000Z",
-        type: "response_item",
-        payload: {
-          type: "function_call_output",
-          call_id: "call-close",
-          output: "{\"previous_status\":{\"completed\":\"done\"}}"
-        }
-      })
-    ].join("\n")
-  );
-
-  const stopPayload = JSON.stringify({
-    hook_event_name: "Stop",
-    session_id: "session-stop-replay",
-    cwd: root,
-    transcript_path: transcriptPath
-  });
-
-  const first = runCli(["hook"], {}, 0, stopPayload);
-  const second = runCli(["hook"], {}, 0, stopPayload);
-  const closed = runCli(["--cwd", root, "--session", "session-stop-replay", "--closed", "--full"], {
-    CODEX_THREAD_ID: "ignored"
-  });
-
-  try {
-    assert.equal(first.stdout, "{}\n");
-    assert.equal(second.stdout, "{}\n");
-    const parsed = JSON.parse(closed.stdout);
-    assert.equal(parsed.summary.closed, 1);
-    assert.equal(parsed.summary.shown, 1);
-    assert.equal(parsed.runs[0].agentId, "agent-close");
-    assert.equal(parsed.runs[0].closePayload.tool_use_id, "call-close");
-
-    const ledger = SubagentLedger.open(root);
-    try {
-      const closeEvents = ledger
-        .eventsForSession("session-stop-replay")
-        .filter((event) => event.event_name === "PostToolUse");
-      assert.equal(closeEvents.length, 1);
-    } finally {
-      ledger.close();
-    }
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-function runCli(
-  args: string[],
-  env: NodeJS.ProcessEnv,
-  expectedStatus = 0,
-  input?: string
-): { stdout: string; stderr: string } {
+function runCli(args: string[], env: NodeJS.ProcessEnv, expectedStatus = 0): { stdout: string; stderr: string } {
   const cliPath = join(dirname(fileURLToPath(import.meta.url)), "cli.js");
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     env: { ...process.env, ...env },
-    encoding: "utf8",
-    input
+    encoding: "utf8"
   });
   assert.equal(result.status, expectedStatus, result.stderr);
   return {
