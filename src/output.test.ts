@@ -9,7 +9,7 @@ test("medium output keeps common recall and stats fields", () => {
 
   assert.deepEqual(output.summary, {
     running: 0,
-    stopped: 1,
+    stopped: 0,
     closed: 1,
     total: 1,
     shown: 1
@@ -17,8 +17,7 @@ test("medium output keeps common recall and stats fields", () => {
   assert.deepEqual(Object.keys(item), [
     "agentId",
     "agentType",
-    "status",
-    "closed",
+    "state",
     "prompt",
     "startTime",
     "stopTime",
@@ -29,6 +28,7 @@ test("medium output keeps common recall and stats fields", () => {
     "cwd"
   ]);
   assert.equal(item.agentId, "agent-1");
+  assert.equal(item.state, "closed");
   assert.equal(item.prompt, "inspect package.json");
   assert.equal("runKey" in item, false);
   assert.equal("sessionId" in item, false);
@@ -44,11 +44,14 @@ test("full output includes all run fields and parsed raw payloads", () => {
   assert.deepEqual(output.summary, {
     sessionId: "session-a",
     running: 0,
-    stopped: 1,
+    stopped: 0,
     closed: 1,
     total: 1,
     shown: 1
   });
+  assert.equal(item.state, "closed");
+  assert.equal("status" in item, false);
+  assert.equal("closed" in item, false);
   assert.equal(item.runKey, "session-a:agent-1");
   assert.equal(item.sessionId, "session-a");
   assert.equal(item.turnId, "turn-1");
@@ -74,7 +77,7 @@ function summary(): SessionSummary {
   return {
     sessionId: "session-a",
     running: 0,
-    stopped: 1,
+    stopped: 0,
     closed: 1,
     total: 1
   };

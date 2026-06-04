@@ -37,11 +37,11 @@ The database stores:
 
 Hooks use the `session_id` field provided by Codex in the hook JSON.
 
-The CLI defaults to `CODEX_THREAD_ID`, running-only filtering, medium detail, and pretty JSON. It also accepts:
+The CLI defaults to `CODEX_THREAD_ID`, running-only filtering, medium detail, and pretty JSON. Public list output exposes one mutually exclusive `state` per run: `running`, `stopped`, or `closed`. It also accepts:
 
 ```sh
 npx -y subagent-auto-manager@latest --session <session-id> --cwd <project> --all --yaml --full
-npx -y subagent-auto-manager@latest --session <session-id> --cwd <project> --closed
+npx -y subagent-auto-manager@latest --session <session-id> --cwd <project> --state closed
 npx -y subagent-auto-manager@latest reset --session <session-id> --cwd <project> --agent <agent-id>
 npx -y subagent-auto-manager@latest wait --session <session-id> --cwd <project> --agent <agent-a> --agent <agent-b> --timeout-ms 600000
 ```

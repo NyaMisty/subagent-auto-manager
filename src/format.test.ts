@@ -7,7 +7,7 @@ test("formats optional compact human-readable session output", () => {
   const summary: SessionSummary = {
     sessionId: "019e87b0-d695-7902-96e1-9672e0a12db6",
     running: 1,
-    stopped: 1,
+    stopped: 0,
     closed: 1,
     total: 2
   };
@@ -19,7 +19,7 @@ test("formats optional compact human-readable session output", () => {
   assert.equal(
     formatSession(summary, runs, { now: new Date("2026-06-02T00:00:03.000Z") }),
     [
-      "session 019e87b0 total=2 running=1 stopped=1 closed=1",
+      "session 019e87b0 total=2 running=1 stopped=0 closed=1",
       "RUN agent-ru general 3s review files and report issues",
       "CLOSED agent-st general 2s",
       ""

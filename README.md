@@ -85,7 +85,7 @@ List all running and historical subagents:
 npx -y subagent-auto-manager@latest --all
 ```
 
-List only stopped subagents:
+List only stopped, not-closed subagents:
 
 ```sh
 npx -y subagent-auto-manager@latest --stopped
@@ -96,6 +96,8 @@ List only closed subagent threads:
 ```sh
 npx -y subagent-auto-manager@latest --closed
 ```
+
+The equivalent explicit filter is `--state running`, `--state stopped`, `--state closed`, or `--state all`. The older `--status` spelling remains accepted as a compatibility alias.
 
 Reset closed marks for the current session, or one agent:
 
@@ -128,7 +130,9 @@ Use an explicit session or project directory when needed:
 npx -y subagent-auto-manager@latest --session 019e87b0-d695-7902-96e1-9672e0a12db6 --cwd /path/to/project
 ```
 
-Default output is pretty medium-detail JSON, filtered to running agents that have not been closed. Medium output keeps only the operational subagent id plus recall fields: agent type, prompt, status, closed state, timing, model, cwd, and last message.
+Default output is pretty medium-detail JSON, filtered to running agents that have not been closed. Medium output keeps only the operational subagent id plus recall fields: agent type, prompt, public state, timing, model, cwd, and last message.
+
+The public `state` is a single mutually exclusive value: `running`, `stopped`, or `closed`. Internally, the ledger still stores subagent execution status and the closed-thread flag separately.
 
 ```json
 {
@@ -143,8 +147,7 @@ Default output is pretty medium-detail JSON, filtered to running agents that hav
     {
       "agentId": "agent-running",
       "agentType": "general",
-      "status": "running",
-      "closed": false,
+      "state": "running",
       "prompt": "review files and report issues"
     }
   ]

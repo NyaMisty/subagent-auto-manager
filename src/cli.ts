@@ -7,6 +7,7 @@ import { isDirectEntry } from "./runtime.js";
 import { sessionIdFromEnv } from "./session.js";
 import { formatSession } from "./format.js";
 import { buildOutput, type DetailLevel } from "./output.js";
+import { publicRunState } from "./state.js";
 import { toYaml } from "./yaml.js";
 import type { SubagentRun } from "./types.js";
 
@@ -21,7 +22,7 @@ interface CliOptions {
   intervalMs: number;
   output: "json" | "yaml" | "text";
   detail: DetailLevel;
-  status: "running" | "stopped" | "closed" | "all";
+  state: "running" | "stopped" | "closed" | "all";
 }
 
 interface WaitTargetStatus {
@@ -100,7 +101,7 @@ export async function main(argv = process.argv.slice(2), env = process.env): Pro
     }
 
     const summary = ledger.summary(sessionId);
-    const runs = filterRuns(ledger.listSession(sessionId, true), options.status);
+    const runs = filterRuns(ledger.listSession(sessionId, true), options.state);
     const result = buildOutput(summary, runs, options.detail);
     if (options.output === "json") {
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
@@ -124,7 +125,7 @@ function parseArgs(argv: string[]): CliOptions {
     intervalMs: 1000,
     output: "json",
     detail: "medium",
-    status: "running"
+    state: "running"
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -132,10 +133,10 @@ function parseArgs(argv: string[]): CliOptions {
     if (arg === "list" || arg === "running" || arg === "reset" || arg === "wait" || arg === "hook") {
       options.command = arg;
       if (arg === "list") {
-        options.status = "all";
+        options.state = "all";
       }
       if (arg === "running") {
-        options.status = "running";
+        options.state = "running";
       }
       continue;
     }
@@ -169,7 +170,7 @@ function parseArgs(argv: string[]): CliOptions {
       if (options.command === "wait") {
         options.waitAllRunning = true;
       } else {
-        options.status = "all";
+        options.state = "all";
       }
       continue;
     }
@@ -180,32 +181,37 @@ function parseArgs(argv: string[]): CliOptions {
     }
 
     if (arg === "--running") {
-      options.status = "running";
+      options.state = "running";
       continue;
     }
 
     if (arg === "--stopped") {
-      options.status = "stopped";
+      options.state = "stopped";
       continue;
     }
 
     if (arg === "--closed") {
-      options.status = "closed";
+      options.state = "closed";
       continue;
     }
 
-    if (arg === "--status") {
+    if (arg === "--state" || arg === "--status") {
       const value = argv[index + 1];
       if (!value) {
-        throw new Error("--status requires a value");
+        throw new Error(`${arg} requires a value`);
       }
-      options.status = parseStatus(value);
+      options.state = parseState(value);
       index += 1;
       continue;
     }
 
+    if (arg.startsWith("--state=")) {
+      options.state = parseState(arg.slice("--state=".length));
+      continue;
+    }
+
     if (arg.startsWith("--status=")) {
-      options.status = parseStatus(arg.slice("--status=".length));
+      options.state = parseState(arg.slice("--status=".length));
       continue;
     }
 
@@ -341,12 +347,12 @@ function parseArgs(argv: string[]): CliOptions {
   return options;
 }
 
-function parseStatus(value: string): "running" | "stopped" | "closed" | "all" {
+function parseState(value: string): "running" | "stopped" | "closed" | "all" {
   if (value === "running" || value === "stopped" || value === "closed" || value === "all") {
     return value;
   }
 
-  throw new Error(`unsupported status filter: ${value}`);
+  throw new Error(`unsupported state filter: ${value}`);
 }
 
 function parseDetail(value: string): DetailLevel {
@@ -515,16 +521,12 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function filterRuns(runs: SubagentRun[], status: "running" | "stopped" | "closed" | "all"): SubagentRun[] {
-  if (status === "all") {
+function filterRuns(runs: SubagentRun[], state: "running" | "stopped" | "closed" | "all"): SubagentRun[] {
+  if (state === "all") {
     return runs;
   }
 
-  if (status === "closed") {
-    return runs.filter((run) => run.closed);
-  }
-
-  return runs.filter((run) => run.status === status && (status !== "running" || !run.closed));
+  return runs.filter((run) => publicRunState(run) === state);
 }
 
 function writeHints(
@@ -534,7 +536,7 @@ function writeHints(
   total: number
 ): void {
   const pieces = [
-    `filter=${options.status}`,
+    `filter=${options.state}`,
     `format=${options.output}`,
     `detail=${options.detail}`,
     `session=${sessionId}`
@@ -542,20 +544,20 @@ function writeHints(
   process.stderr.write(`[subagent-auto-manager] ${pieces.join(" ")} shown=${shown}/${total}\n`);
 
   const base = "npx -y subagent-auto-manager@latest";
-  if (options.status === "running") {
-    process.stderr.write(`[subagent-auto-manager] next: use \`${base} --all\` to include stopped agents, \`${base} --stopped\` for completed agents, or \`${base} --closed\` for closed threads.\n`);
-  } else if (options.status === "stopped") {
-    process.stderr.write(`[subagent-auto-manager] next: use \`${base} --running\` for active agents, or \`${base} --all\` for the full session list.\n`);
-  } else if (options.status === "closed") {
+  if (options.state === "running") {
+    process.stderr.write(`[subagent-auto-manager] next: use \`${base} --state all\` to include stopped agents, \`${base} --state stopped\` for completed agents, or \`${base} --state closed\` for closed threads.\n`);
+  } else if (options.state === "stopped") {
+    process.stderr.write(`[subagent-auto-manager] next: use \`${base} --state running\` for active agents, or \`${base} --state all\` for the full session list.\n`);
+  } else if (options.state === "closed") {
     process.stderr.write(`[subagent-auto-manager] next: use \`${base} reset --agent <id>\` to clear one closed mark, or \`${base} reset\` to clear closed marks for the session.\n`);
   } else {
-    process.stderr.write(`[subagent-auto-manager] next: use \`${base} --running\` for active agents only, or add \`--full\` for all stored fields.\n`);
+    process.stderr.write(`[subagent-auto-manager] next: use \`${base} --state running\` for active agents only, or add \`--full\` for all stored fields.\n`);
   }
 }
 
 function helpText(): string {
   return `Usage:
-  subagent-auto-manager [running|list] [--session <id>] [--cwd <project>] [--status running|stopped|closed|all] [--json|--yaml|--text] [--detail medium|full]
+  subagent-auto-manager [running|list] [--session <id>] [--cwd <project>] [--state running|stopped|closed|all] [--json|--yaml|--text] [--detail medium|full]
   subagent-auto-manager reset [--agent <id>] [--session <id>] [--cwd <project>] [--json|--yaml|--text]
   subagent-auto-manager wait [agent-id ...] [--all] [--timeout-ms <ms>] [--interval-ms <ms>] [--session <id>] [--cwd <project>] [--json|--yaml|--text]
   subagent-auto-manager hook
@@ -565,7 +567,7 @@ Defaults:
   --cwd defaults to the current working directory.
   Output defaults to JSON. Use --yaml for YAML.
   Detail defaults to medium. Use --full or --detail full for all stored fields and raw payloads.
-  Status defaults to running. Use --all or list to include stopped agents. Use --closed to list closed agent threads.
+  State defaults to running. Use --state all or list to include every state. Shorthand filters --running, --stopped, --closed, and --all are also accepted.
   reset clears closed marks for the current session, or one agent when --agent is provided.
   wait polls the hook ledger until every target is stopped. With no explicit targets, wait snapshots current running, not-closed agents.
 

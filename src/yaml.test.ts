@@ -16,7 +16,7 @@ test("formats nested JSON-compatible values as YAML", () => {
         {
           subagentId: "agent-1",
           agentType: "general",
-          status: "running",
+          state: "running",
           prompt: "inspect package.json",
           stopTime: null
         }
@@ -33,7 +33,7 @@ test("formats nested JSON-compatible values as YAML", () => {
       "  -",
       "    subagentId: \"agent-1\"",
       "    agentType: \"general\"",
-      "    status: \"running\"",
+      "    state: \"running\"",
       "    prompt: \"inspect package.json\"",
       "    stopTime: null",
       ""

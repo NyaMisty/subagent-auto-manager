@@ -223,7 +223,7 @@ export class SubagentLedger {
       .prepare(
         `SELECT ? AS session_id,
                 COALESCE(SUM(CASE WHEN status = 'running' AND closed = 0 THEN 1 ELSE 0 END), 0) AS running,
-                COALESCE(SUM(CASE WHEN status = 'stopped' THEN 1 ELSE 0 END), 0) AS stopped,
+                COALESCE(SUM(CASE WHEN status = 'stopped' AND closed = 0 THEN 1 ELSE 0 END), 0) AS stopped,
                 COALESCE(SUM(CASE WHEN closed = 1 THEN 1 ELSE 0 END), 0) AS closed,
                 COUNT(*) AS total
            FROM subagent_runs

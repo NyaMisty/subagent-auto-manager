@@ -1,4 +1,5 @@
 import type { SessionSummary, SubagentRun } from "./types.js";
+import { publicRunState } from "./state.js";
 
 export interface FormatOptions {
   now?: Date;
@@ -17,7 +18,8 @@ export function formatSession(summary: SessionSummary, runs: SubagentRun[], opti
   for (const run of runs) {
     const name = run.agentId ?? run.subagentId;
     const type = run.agentType ? ` ${run.agentType}` : "";
-    const status = run.closed ? "CLOSED" : run.status === "running" ? "RUN" : "DONE";
+    const state = publicRunState(run);
+    const status = state === "closed" ? "CLOSED" : state === "running" ? "RUN" : "DONE";
     const elapsed = elapsedLabel(run, options.now ?? new Date());
     const prompt = run.prompt ? ` ${truncate(oneLine(run.prompt), 72)}` : "";
     lines.push(`${status} ${short(name)}${type} ${elapsed}${prompt}`);

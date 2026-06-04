@@ -16,7 +16,7 @@ test("defaults output to pretty medium JSON filtered to running agents", async (
   try {
     assert.match(result.stdout, /^\{\n  "summary":/);
     assert.match(result.stderr, /filter=running format=json detail=medium session=session-json shown=1\/2/);
-    assert.match(result.stderr, /--all/);
+    assert.match(result.stderr, /--state all/);
     const parsed = JSON.parse(result.stdout);
     assert.deepEqual(parsed.summary, {
       running: 1,
@@ -28,8 +28,7 @@ test("defaults output to pretty medium JSON filtered to running agents", async (
     assert.deepEqual(Object.keys(parsed.runs[0]), [
       "agentId",
       "agentType",
-      "status",
-      "closed",
+      "state",
       "prompt",
       "startTime",
       "stopTime",
@@ -40,6 +39,7 @@ test("defaults output to pretty medium JSON filtered to running agents", async (
       "cwd"
     ]);
     assert.equal(parsed.runs[0].agentId, "agent-1");
+    assert.equal(parsed.runs[0].state, "running");
     assert.equal(parsed.runs[0].prompt, "inspect package.json");
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -54,6 +54,9 @@ test("supports full JSON list output", async () => {
   try {
     const parsed = JSON.parse(result.stdout);
     assert.equal(parsed.summary.sessionId, "session-full");
+    assert.equal(parsed.runs[0].state, "stopped");
+    assert.equal("status" in parsed.runs[0], false);
+    assert.equal("closed" in parsed.runs[0], false);
     assert.equal(parsed.runs[0].runKey, "session-full:agent-1");
     assert.equal(parsed.runs[0].sessionId, "session-full");
     assert.equal(parsed.runs[0].transcriptPath, join(root, "parent.jsonl"));
@@ -105,6 +108,7 @@ test("supports optional YAML list output", async () => {
   try {
     assert.match(result.stdout, /summary:\n  running: 0\n  stopped: 1\n  closed: 0\n  total: 1\n  shown: 1/);
     assert.match(result.stdout, /runs:\n  -\n    agentId: "agent-1"/);
+    assert.match(result.stdout, /    state: "stopped"/);
     assert.match(result.stdout, /    prompt: "inspect package\.json"/);
     assert.equal(result.stdout.includes("runKey:"), false);
     assert.equal(result.stdout.includes("startPayload:"), false);
@@ -140,7 +144,7 @@ test("filters stopped agents explicitly", async () => {
     const parsed = JSON.parse(result.stdout);
     assert.equal(parsed.summary.shown, 1);
     assert.equal(parsed.runs[0].agentId, "agent-stopped");
-    assert.equal(parsed.runs[0].status, "stopped");
+    assert.equal(parsed.runs[0].state, "stopped");
     assert.match(result.stderr, /filter=stopped/);
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -156,6 +160,7 @@ test("filters closed agents and resets one closed mark", async () => {
   closeRun(root, "session-closed", "agent-running-closed");
 
   const closed = runCli(["--cwd", root, "--closed"], { CODEX_THREAD_ID: "session-closed" });
+  const stateClosed = runCli(["--cwd", root, "--state", "closed"], { CODEX_THREAD_ID: "session-closed" });
   const running = runCli(["--cwd", root], { CODEX_THREAD_ID: "session-closed" });
   const reset = runCli(["reset", "--cwd", root, "--agent", "agent-closed", "--text"], {
     CODEX_THREAD_ID: "session-closed"
@@ -164,14 +169,18 @@ test("filters closed agents and resets one closed mark", async () => {
 
   try {
     const parsed = JSON.parse(closed.stdout);
+    assert.deepEqual(JSON.parse(stateClosed.stdout).runs, parsed.runs);
     assert.equal(parsed.summary.running, 0);
+    assert.equal(parsed.summary.stopped, 1);
     assert.equal(parsed.summary.closed, 2);
     assert.equal(parsed.summary.shown, 2);
     assert.deepEqual(
       parsed.runs.map((run: { agentId: string }) => run.agentId).sort(),
       ["agent-closed", "agent-running-closed"]
     );
-    assert.equal(parsed.runs.every((run: { closed: boolean }) => run.closed), true);
+    assert.equal(parsed.runs.every((run: { state: string }) => run.state === "closed"), true);
+    assert.equal(parsed.runs.some((run: Record<string, unknown>) => "closed" in run), false);
+    assert.equal(parsed.runs.some((run: Record<string, unknown>) => "status" in run), false);
     assert.deepEqual(JSON.parse(running.stdout).runs, []);
     assert.match(closed.stderr, /filter=closed/);
     assert.equal(reset.stdout, "reset closed session=session-closed agent=agent-closed matched=1 reset=1\n");
