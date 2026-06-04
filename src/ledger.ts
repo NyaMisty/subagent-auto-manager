@@ -110,6 +110,14 @@ export class SubagentLedger {
   }
 
   record(input: LedgerRecordInput): LedgerRecordResult {
+    if (input.eventName === "Stop") {
+      return {
+        eventId: 0,
+        subagentId: "",
+        recorded: false
+      };
+    }
+
     const now = new Date().toISOString();
     const payloadJson = compactJson(input.payload);
     const fields = extractFields(input.payload, input.projectRoot);
@@ -251,6 +259,19 @@ export class SubagentLedger {
           ORDER BY id ASC`
       )
       .all(sessionId) as unknown as EventRow[];
+  }
+
+  hasToolUse(sessionId: string, toolUseId: string): boolean {
+    const row = this.db
+      .prepare(
+        `SELECT 1
+           FROM subagent_events
+          WHERE session_id = ?
+            AND tool_use_id = ?
+          LIMIT 1`
+      )
+      .get(sessionId, toolUseId) as { 1: number } | undefined;
+    return row !== undefined;
   }
 
   private resolveRunKey(

@@ -7,10 +7,11 @@ The hook entrypoint accepts:
 - `SubagentStart`
 - `SubagentStop`
 - `PostToolUse`
+- `Stop`
 
 The event name is read from `hook_event_name`.
 
-`PostToolUse` is used only for subagent thread state tracking. A successful `close_agent` call marks the target agent as `closed`; a successful `resume_agent` call clears that mark.
+`PostToolUse` is used only for subagent thread state tracking. A successful `close_agent` call marks the target agent as `closed`; a successful `resume_agent` call clears that mark. `Stop` is also used as a transcript replay fallback for Codex builds that do not emit `PostToolUse` for multi-agent tools.
 
 ## Hook Configuration
 
@@ -45,6 +46,17 @@ Example `hooks.json`:
             "type": "command",
             "command": "npx -y subagent-auto-manager@latest hook",
             "statusMessage": "Recording subagent stop"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx -y subagent-auto-manager@latest hook",
+            "statusMessage": "Replaying subagent close/resume"
           }
         ]
       }
@@ -166,7 +178,7 @@ Every stored payload is also stored as compact raw JSON in `payload_json`, so ne
 
 `SubagentStop` means the subagent turn ended. It does not prove that the parent closed the agent thread.
 
-Closed state is inferred from `PostToolUse`. Configure `PostToolUse` with a suffix matcher such as `(^|.*(__|\\.))(close_agent|resume_agent)$` so Codex forwards bare and namespaced tool-name variants from multi-agent implementations.
+Closed state is inferred from `PostToolUse`, plus `Stop` transcript replay as a fallback. Configure `PostToolUse` with a suffix matcher such as `(^|.*(__|\\.))(close_agent|resume_agent)$` so Codex forwards bare and namespaced tool-name variants when available. Keep the `Stop` hook configured because some Codex builds record multi-agent tool calls in the transcript without firing `PostToolUse` for them.
 
 - `close_agent` with `tool_input.target` and a successful response marks that target `closed`.
 - `resume_agent` with `tool_input.id` and a successful response clears `closed`.

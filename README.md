@@ -45,6 +45,17 @@ Add this to Codex hooks config, for example project `.codex/hooks.json`:
         ]
       }
     ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx -y subagent-auto-manager@latest hook",
+            "statusMessage": "Replaying subagent close/resume"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "(^|.*(__|\\.))(close_agent|resume_agent)$",
@@ -61,7 +72,7 @@ Add this to Codex hooks config, for example project `.codex/hooks.json`:
 }
 ```
 
-The command reads Codex JSON from stdin and writes `{}` to stdout so Codex can continue normally. `SubagentStart` and `SubagentStop` payloads are stored in full. `PostToolUse` tracks `close_agent` and `resume_agent`, including namespaced tool names such as `multi_agent_v1__close_agent` or `multi_agent_v1.close_agent`, which are the available signal for whether the parent closed or reopened a subagent thread.
+The command reads Codex JSON from stdin and writes `{}` to stdout so Codex can continue normally. `SubagentStart` and `SubagentStop` payloads are stored in full. `PostToolUse` tracks `close_agent` and `resume_agent`, including namespaced tool names such as `multi_agent_v1__close_agent` or `multi_agent_v1.close_agent`. `Stop` replays close/resume calls from the parent transcript for Codex builds that do not emit `PostToolUse` for multi-agent tools.
 
 For a global install, put the same `hooks` block in `~/.codex/hooks.json`. On Windows this is typically:
 
