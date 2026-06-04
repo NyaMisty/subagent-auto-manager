@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { SubagentLedger } from "./ledger.js";
+import { databasePath } from "./paths.js";
+
+const require = createRequire(import.meta.url);
+const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
 
 test("defaults output to pretty medium JSON filtered to running agents", async () => {
   const root = tempRoot();
@@ -206,6 +211,53 @@ test("filters closed agents and resets one closed mark", async () => {
   }
 });
 
+test("after-timestamp lists all agent statuses started after the Unix timestamp", async () => {
+  const root = tempRoot();
+  const sessionId = "session-after";
+  const threshold = Math.floor(Date.parse("2026-06-04T00:00:30.000Z") / 1000);
+  seedRun(root, sessionId, "stopped", "agent-old");
+  seedRun(root, sessionId, "running", "agent-running-after");
+  seedRun(root, sessionId, "stopped", "agent-stopped-after");
+  seedRun(root, sessionId, "running", "agent-closed-after");
+  closeRun(root, sessionId, "agent-closed-after");
+  setRunStartTime(root, `${sessionId}:agent-old`, "2026-06-04T00:00:00.000Z");
+  setRunStartTime(root, `${sessionId}:agent-running-after`, "2026-06-04T00:01:00.000Z");
+  setRunStartTime(root, `${sessionId}:agent-stopped-after`, "2026-06-04T00:02:00.000Z");
+  setRunStartTime(root, `${sessionId}:agent-closed-after`, "2026-06-04T00:03:00.000Z");
+
+  const result = runCli(["--cwd", root, "--after-timestamp", String(threshold)], {
+    CODEX_THREAD_ID: sessionId
+  });
+
+  try {
+    const parsed = JSON.parse(result.stdout);
+    assert.equal(parsed.summary.total, 4);
+    assert.equal(parsed.summary.shown, 3);
+    assert.deepEqual(
+      parsed.runs.map((run: { agentId: string }) => run.agentId).sort(),
+      ["agent-closed-after", "agent-running-after", "agent-stopped-after"]
+    );
+    assert.equal(parsed.runs.some((run: { agentId: string; closed: boolean }) => run.agentId === "agent-closed-after" && run.closed), true);
+    assert.equal(parsed.runs.some((run: { agentId: string; status: string }) => run.agentId === "agent-stopped-after" && run.status === "stopped"), true);
+    assert.match(result.stderr, /filter=all/);
+    assert.match(result.stderr, new RegExp(`after_timestamp=${threshold}`));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects invalid after-timestamp values", async () => {
+  const root = tempRoot();
+  const result = runCli(["--cwd", root, "--after-timestamp", "12.5"], { CODEX_THREAD_ID: "session-after-invalid" }, 1);
+
+  try {
+    assert.match(result.stderr, /--after-timestamp requires a non-negative Unix timestamp in seconds/);
+    assert.equal(result.stdout, "");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("wait returns when every target is stopped", async () => {
   const root = tempRoot();
   seedRun(root, "session-wait-done", "stopped", "agent-a");
@@ -309,6 +361,19 @@ function closeRun(root: string, sessionId: string, agentId: string): void {
 
 function tempRoot(): string {
   return mkdtempSync(join(tmpdir(), "subagent-auto-manager-cli-"));
+}
+
+function setRunStartTime(root: string, runKey: string, startTime: string): void {
+  const db = new DatabaseSync(databasePath(root));
+  try {
+    db.prepare("UPDATE subagent_runs SET start_time = ?, updated_at = ? WHERE run_key = ?").run(
+      startTime,
+      startTime,
+      runKey
+    );
+  } finally {
+    db.close();
+  }
 }
 
 function seedRun(root: string, sessionId: string, status: "running" | "stopped" = "stopped", agentId = "agent-1"): void {

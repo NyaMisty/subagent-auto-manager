@@ -43,9 +43,13 @@ The CLI defaults to `CODEX_THREAD_ID`, running-only filtering, medium detail, an
 ```sh
 npx -y subagent-auto-manager@latest --session <session-id> --cwd <project> --all --yaml --full
 npx -y subagent-auto-manager@latest --session <session-id> --cwd <project> --state closed
+npx -y subagent-auto-manager@latest --session <session-id> --cwd <project> --after-timestamp <unix-seconds>
+npx -y subagent-auto-manager@latest --session <session-id> --cwd <project> --closed
 npx -y subagent-auto-manager@latest reset --session <session-id> --cwd <project> --agent <agent-id>
 npx -y subagent-auto-manager@latest wait --session <session-id> --cwd <project> --agent <agent-a> --agent <agent-b> --timeout-ms 600000
 ```
+
+`--after-timestamp` uses a Unix timestamp in seconds, filters runs by `startTime`, and lists all statuses after that timestamp.
 
 ## Verification
 
@@ -65,6 +69,8 @@ Manual hook stdin smoke:
 
 $env:CODEX_THREAD_ID='manual-smoke'
 npx -y subagent-auto-manager@latest --cwd . --all
+npx -y subagent-auto-manager@latest --cwd . --all --yaml
+npx -y subagent-auto-manager@latest --cwd . --after-timestamp 0
 
 @'
 {"hook_event_name":"PostToolUse","session_id":"manual-smoke","cwd":"D:\\Workspaces\\UtilWorkspace\\LLM\\subagent_auto_manager","tool_name":"close_agent","tool_input":{"target":"agent-1"},"tool_response":{"previous_status":"completed"}}

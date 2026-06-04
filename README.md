@@ -85,6 +85,14 @@ List all running and historical subagents:
 npx -y subagent-auto-manager@latest --all
 ```
 
+List all statuses for agents started after a Unix timestamp in seconds:
+
+```sh
+npx -y subagent-auto-manager@latest --after-timestamp 1780531200
+```
+
+`--after-timestamp` filters by subagent `startTime` and shows running, stopped, and closed agents.
+
 List only stopped, not-closed subagents:
 
 ```sh

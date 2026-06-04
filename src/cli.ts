@@ -23,6 +23,7 @@ interface CliOptions {
   output: "json" | "yaml" | "text";
   detail: DetailLevel;
   state: "running" | "stopped" | "closed" | "all";
+  afterTimestamp?: number;
 }
 
 interface WaitTargetStatus {
@@ -101,7 +102,7 @@ export async function main(argv = process.argv.slice(2), env = process.env): Pro
     }
 
     const summary = ledger.summary(sessionId);
-    const runs = filterRuns(ledger.listSession(sessionId, true), options.state);
+    const runs = filterRuns(ledger.listSession(sessionId, true), options.state, options.afterTimestamp);
     const result = buildOutput(summary, runs, options.detail);
     if (options.output === "json") {
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
@@ -212,6 +213,21 @@ function parseArgs(argv: string[]): CliOptions {
 
     if (arg.startsWith("--status=")) {
       options.state = parseState(arg.slice("--status=".length));
+      continue;
+    }
+
+    if (arg === "--after-timestamp") {
+      const value = argv[index + 1];
+      if (!value) {
+        throw new Error("--after-timestamp requires a value");
+      }
+      options.afterTimestamp = parseUnixTimestamp(value, "--after-timestamp");
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith("--after-timestamp=")) {
+      options.afterTimestamp = parseUnixTimestamp(arg.slice("--after-timestamp=".length), "--after-timestamp");
       continue;
     }
 
@@ -344,6 +360,10 @@ function parseArgs(argv: string[]): CliOptions {
     throw new Error(`unknown argument: ${arg}`);
   }
 
+  if ((options.command === "running" || options.command === "list") && options.afterTimestamp !== undefined) {
+    options.state = "all";
+  }
+
   return options;
 }
 
@@ -370,6 +390,24 @@ function parseMilliseconds(value: string, label: string): number {
   }
 
   return Math.floor(parsed);
+}
+
+function parseUnixTimestamp(value: string, label: string): number {
+  if (value.length === 0) {
+    throw new Error(`${label} requires a non-negative Unix timestamp in seconds`);
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0 || !Number.isInteger(parsed)) {
+    throw new Error(`${label} requires a non-negative Unix timestamp in seconds`);
+  }
+
+  const milliseconds = parsed * 1000;
+  if (!Number.isSafeInteger(milliseconds) || Number.isNaN(new Date(milliseconds).getTime())) {
+    throw new Error(`${label} is outside the supported date range`);
+  }
+
+  return parsed;
 }
 
 async function waitForAgents(
@@ -521,12 +559,22 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function filterRuns(runs: SubagentRun[], state: "running" | "stopped" | "closed" | "all"): SubagentRun[] {
-  if (state === "all") {
-    return runs;
+function filterRuns(
+  runs: SubagentRun[],
+  state: "running" | "stopped" | "closed" | "all",
+  afterTimestamp?: number
+): SubagentRun[] {
+  const stateFiltered =
+    state === "all"
+      ? runs
+      : runs.filter((run) => publicRunState(run) === state);
+
+  if (afterTimestamp === undefined) {
+    return stateFiltered;
   }
 
-  return runs.filter((run) => publicRunState(run) === state);
+  const afterMs = afterTimestamp * 1000;
+  return stateFiltered.filter((run) => new Date(run.startTime).getTime() > afterMs);
 }
 
 function writeHints(
@@ -541,6 +589,9 @@ function writeHints(
     `detail=${options.detail}`,
     `session=${sessionId}`
   ];
+  if (options.afterTimestamp !== undefined) {
+    pieces.push(`after_timestamp=${options.afterTimestamp}`);
+  }
   process.stderr.write(`[subagent-auto-manager] ${pieces.join(" ")} shown=${shown}/${total}\n`);
 
   const base = "npx -y subagent-auto-manager@latest";
@@ -557,7 +608,7 @@ function writeHints(
 
 function helpText(): string {
   return `Usage:
-  subagent-auto-manager [running|list] [--session <id>] [--cwd <project>] [--state running|stopped|closed|all] [--json|--yaml|--text] [--detail medium|full]
+  subagent-auto-manager [running|list] [--session <id>] [--cwd <project>] [--state running|stopped|closed|all] [--after-timestamp <unix-seconds>] [--json|--yaml|--text] [--detail medium|full]
   subagent-auto-manager reset [--agent <id>] [--session <id>] [--cwd <project>] [--json|--yaml|--text]
   subagent-auto-manager wait [agent-id ...] [--all] [--timeout-ms <ms>] [--interval-ms <ms>] [--session <id>] [--cwd <project>] [--json|--yaml|--text]
   subagent-auto-manager hook
@@ -568,6 +619,7 @@ Defaults:
   Output defaults to JSON. Use --yaml for YAML.
   Detail defaults to medium. Use --full or --detail full for all stored fields and raw payloads.
   State defaults to running. Use --state all or list to include every state. Shorthand filters --running, --stopped, --closed, and --all are also accepted.
+  --after-timestamp lists all statuses whose start time is after the Unix timestamp in seconds.
   reset clears closed marks for the current session, or one agent when --agent is provided.
   wait polls the hook ledger until every target is stopped. With no explicit targets, wait snapshots current running, not-closed agents.
 
