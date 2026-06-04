@@ -28,6 +28,7 @@ interface EventRow {
   agent_transcript_path: string | null;
   prompt: string | null;
   last_assistant_message: string | null;
+  start_args_json: string | null;
   stop_hook_active: number | null;
   tool_name: string | null;
   tool_use_id: string | null;
@@ -59,6 +60,7 @@ interface RunRow {
   duration_ms: number | null;
   prompt: string | null;
   last_assistant_message: string | null;
+  start_args_json: string | null;
   start_payload: string;
   stop_payload: string | null;
   close_payload: string | null;
@@ -112,7 +114,7 @@ export class SubagentLedger {
   record(input: LedgerRecordInput): LedgerRecordResult {
     const now = new Date().toISOString();
     const payloadJson = compactJson(input.payload);
-    const fields = extractFields(input.payload, input.projectRoot);
+    const fields = extractFields(input.payload, input.projectRoot, input.eventName);
     const toolStateChange = toolStateChangeFromPayload(input.eventName, input.payload);
     if (input.eventName === "PostToolUse" && !toolStateChange) {
       return {
@@ -208,6 +210,7 @@ export class SubagentLedger {
         `SELECT run_key, subagent_id, agent_id, agent_type, session_id, turn_id, permission_mode, model, cwd,
                 transcript_path, agent_transcript_path, start_event_id, stop_event_id, start_time, stop_time,
                 status, closed, close_event_id, close_time, duration_ms, prompt, last_assistant_message,
+                start_args_json,
                 start_payload, stop_payload, close_payload
            FROM subagent_runs
           WHERE ${where}
@@ -245,6 +248,7 @@ export class SubagentLedger {
       .prepare(
         `SELECT id, event_name, session_id, turn_id, subagent_id, agent_id, agent_type, permission_mode,
                 model, cwd, transcript_path, agent_transcript_path, prompt, last_assistant_message,
+                start_args_json,
                 stop_hook_active, tool_name, tool_use_id, close_target, payload_json, created_at
            FROM subagent_events
           WHERE session_id = ?
@@ -313,8 +317,8 @@ export class SubagentLedger {
         `INSERT INTO subagent_events
           (event_name, session_id, turn_id, run_key, subagent_id, agent_id, agent_type, permission_mode,
            model, cwd, transcript_path, agent_transcript_path, prompt, last_assistant_message,
-           stop_hook_active, tool_name, tool_use_id, close_target, payload_json, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           start_args_json, stop_hook_active, tool_name, tool_use_id, close_target, payload_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         values.eventName,
@@ -331,6 +335,7 @@ export class SubagentLedger {
         values.fields.agentTranscriptPath,
         values.fields.prompt,
         values.fields.lastAssistantMessage,
+        values.fields.startArgs,
         values.fields.stopHookActive === null ? null : Number(values.fields.stopHookActive),
         values.fields.toolName,
         values.fields.toolUseId,
@@ -356,8 +361,8 @@ export class SubagentLedger {
         `INSERT INTO subagent_runs
           (run_key, subagent_id, agent_id, agent_type, session_id, turn_id, permission_mode, model, cwd,
            transcript_path, agent_transcript_path, start_event_id, start_time, status, prompt,
-           last_assistant_message, start_payload, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?)
+           last_assistant_message, start_args_json, start_payload, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?)
          ON CONFLICT(run_key) DO UPDATE SET
            subagent_id = excluded.subagent_id,
            agent_id = excluded.agent_id,
@@ -380,6 +385,7 @@ export class SubagentLedger {
            duration_ms = NULL,
            prompt = excluded.prompt,
            last_assistant_message = excluded.last_assistant_message,
+           start_args_json = excluded.start_args_json,
            start_payload = excluded.start_payload,
            stop_payload = NULL,
            close_payload = NULL,
@@ -401,6 +407,7 @@ export class SubagentLedger {
         values.startTime,
         values.fields.prompt,
         values.fields.lastAssistantMessage,
+        values.fields.startArgs,
         values.startPayload,
         values.startTime
       );
@@ -426,8 +433,8 @@ export class SubagentLedger {
         `INSERT INTO subagent_runs
           (run_key, subagent_id, agent_id, agent_type, session_id, turn_id, permission_mode, model, cwd,
            transcript_path, agent_transcript_path, start_event_id, stop_event_id, start_time, stop_time,
-           status, duration_ms, prompt, last_assistant_message, start_payload, stop_payload, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'stopped', ?, NULL, ?, ?, ?, ?)
+           status, duration_ms, prompt, last_assistant_message, start_args_json, start_payload, stop_payload, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'stopped', ?, NULL, ?, NULL, ?, ?, ?)
          ON CONFLICT(run_key) DO UPDATE SET
            stop_event_id = excluded.stop_event_id,
            stop_time = excluded.stop_time,
@@ -538,6 +545,7 @@ export class SubagentLedger {
         agent_transcript_path TEXT,
         prompt TEXT,
         last_assistant_message TEXT,
+        start_args_json TEXT,
         stop_hook_active INTEGER,
         tool_name TEXT,
         tool_use_id TEXT,
@@ -569,6 +577,7 @@ export class SubagentLedger {
         duration_ms INTEGER,
         prompt TEXT,
         last_assistant_message TEXT,
+        start_args_json TEXT,
         start_payload TEXT NOT NULL,
         stop_payload TEXT,
         close_payload TEXT,
@@ -591,10 +600,12 @@ export class SubagentLedger {
     this.addColumnIfMissing("subagent_events", "tool_name", "tool_name TEXT");
     this.addColumnIfMissing("subagent_events", "tool_use_id", "tool_use_id TEXT");
     this.addColumnIfMissing("subagent_events", "close_target", "close_target TEXT");
+    this.addColumnIfMissing("subagent_events", "start_args_json", "start_args_json TEXT");
     this.addColumnIfMissing("subagent_runs", "closed", "closed INTEGER NOT NULL DEFAULT 0");
     this.addColumnIfMissing("subagent_runs", "close_event_id", "close_event_id INTEGER");
     this.addColumnIfMissing("subagent_runs", "close_time", "close_time TEXT");
     this.addColumnIfMissing("subagent_runs", "close_payload", "close_payload TEXT");
+    this.addColumnIfMissing("subagent_runs", "start_args_json", "start_args_json TEXT");
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_subagent_runs_session_closed
         ON subagent_runs(session_id, closed, close_time);
@@ -622,12 +633,13 @@ interface ExtractedFields {
   agentTranscriptPath: string | null;
   prompt: string | null;
   lastAssistantMessage: string | null;
+  startArgs: string | null;
   stopHookActive: boolean | null;
   toolName: string | null;
   toolUseId: string | null;
 }
 
-function extractFields(payload: HookInput, projectRoot: string): ExtractedFields {
+function extractFields(payload: HookInput, projectRoot: string, eventName?: SupportedEvent): ExtractedFields {
   return {
     agentId: firstString(payload, ["agent_id", "subagent_id", "agentId", "subagentId", "run_id", "runId"]),
     agentType: firstString(payload, ["agent_type", "agentType"]),
@@ -639,10 +651,23 @@ function extractFields(payload: HookInput, projectRoot: string): ExtractedFields
     agentTranscriptPath: firstString(payload, ["agent_transcript_path", "agentTranscriptPath"]),
     prompt: stringOrNull(payload.prompt),
     lastAssistantMessage: firstString(payload, ["last_assistant_message", "lastAssistantMessage"]),
+    startArgs: eventName === "SubagentStart" ? compactJson(startArgsFromPayload(payload)) : null,
     stopHookActive: typeof payload.stop_hook_active === "boolean" ? payload.stop_hook_active : null,
     toolName: firstString(payload, ["tool_name", "toolName", "name", "tool"]),
     toolUseId: firstString(payload, ["tool_use_id", "toolUseId", "call_id", "callId"])
   };
+}
+
+function startArgsFromPayload(payload: HookInput): Record<string, unknown> {
+  const args: Record<string, unknown> = {};
+  const excluded = new Set(["hook_event_name", "session_id", "turn_id", "transcript_path", "agent_transcript_path"]);
+  for (const [key, value] of Object.entries(payload)) {
+    if (!excluded.has(key) && value !== undefined) {
+      args[key] = value;
+    }
+  }
+
+  return args;
 }
 
 function firstString(payload: Record<string, unknown>, keys: string[]): string | null {
@@ -816,6 +841,7 @@ function mapRun(row: RunRow): SubagentRun {
     durationMs: row.duration_ms === null ? null : Number(row.duration_ms),
     prompt: row.prompt,
     lastAssistantMessage: row.last_assistant_message,
+    startArgs: row.start_args_json,
     startPayload: row.start_payload,
     stopPayload: row.stop_payload,
     closePayload: row.close_payload

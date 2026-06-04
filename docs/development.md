@@ -30,6 +30,7 @@ The database stores:
 - one row per hook payload in `subagent_events`
 - one reconstructed run per subagent in `subagent_runs`
 - explicit columns for common Codex fields
+- `start_args_json`, a compact launch-argument snapshot derived from `SubagentStart`
 - `closed`, `close_event_id`, `close_time`, and raw close payload fields for thread-close state
 - the complete compact raw payload JSON
 
@@ -59,7 +60,7 @@ Manual hook stdin smoke:
 
 ```powershell
 @'
-{"hook_event_name":"SubagentStart","session_id":"manual-smoke","turn_id":"turn-1","agent_id":"agent-1","agent_type":"general","cwd":"D:\\Workspaces\\UtilWorkspace\\LLM\\subagent_auto_manager","model":"gpt-5","permission_mode":"default","prompt":"manual smoke"}
+{"hook_event_name":"SubagentStart","session_id":"manual-smoke","turn_id":"turn-1","agent_id":"agent-1","agent_type":"general","cwd":"D:\\Workspaces\\UtilWorkspace\\LLM\\subagent_auto_manager","model":"gpt-5","model_reasoning_effort":"high","sandbox_mode":"workspace-write","approval_policy":"on-request","permission_mode":"default","prompt":"manual smoke"}
 '@ | npx -y subagent-auto-manager@latest hook
 
 $env:CODEX_THREAD_ID='manual-smoke'

@@ -43,6 +43,7 @@ function mediumRun(run: SubagentRun): Record<string, unknown> {
     closeTime: run.closeTime,
     durationMs: run.durationMs,
     lastAssistantMessage: run.lastAssistantMessage,
+    startArgs: run.startArgs === null ? null : parsePayload(run.startArgs),
     model: run.model,
     cwd: run.cwd
   };
@@ -53,6 +54,7 @@ function fullRun(run: SubagentRun): Record<string, unknown> {
   return {
     ...publicRun,
     state: publicRunState(run),
+    startArgs: run.startArgs === null ? null : parsePayload(run.startArgs),
     startPayload: parsePayload(run.startPayload),
     stopPayload: run.stopPayload === null ? null : parsePayload(run.stopPayload),
     closePayload: run.closePayload === null ? null : parsePayload(run.closePayload)

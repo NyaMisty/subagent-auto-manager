@@ -78,6 +78,10 @@ Example `hooks.json`:
   "agent_type": "general",
   "cwd": "D:\\Workspaces\\UtilWorkspace\\LLM\\subagent_auto_manager",
   "model": "gpt-5",
+  "model_reasoning_effort": "high",
+  "sandbox_mode": "workspace-write",
+  "approval_policy": "on-request",
+  "fork_context": false,
   "permission_mode": "default",
   "transcript_path": "D:\\project\\parent.jsonl",
   "agent_transcript_path": "D:\\project\\subagents\\agent-1.jsonl",
@@ -155,10 +159,13 @@ Known fields are copied to queryable columns:
 - `agent_transcript_path`
 - `prompt`
 - `last_assistant_message`
+- `start_args_json`
 - `stop_hook_active`
 - `tool_name`
 - `tool_use_id`
 - `close_target`
+
+`start_args_json` is derived from `SubagentStart`. It stores a compact JSON snapshot of launch parameters such as agent type, model, `model_reasoning_effort`, sandbox or approval settings, fork flags, prompt, and any custom fields, while excluding lifecycle metadata such as `hook_event_name`, `session_id`, `turn_id`, `transcript_path`, and `agent_transcript_path`.
 
 Every stored payload is also stored as compact raw JSON in `payload_json`, so new Codex fields are retained without a schema change. The hook ignores unrelated `PostToolUse` payloads; only recognized `close_agent` and `resume_agent` calls are stored from that event.
 

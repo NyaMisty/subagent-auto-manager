@@ -26,6 +26,10 @@ test("records start and stop events with full payload JSON", () => {
         transcript_path: join(root, "transcript.jsonl"),
         agent_transcript_path: join(root, "subagents", "agent-1.jsonl"),
         permission_mode: "default",
+        model_reasoning_effort: "high",
+        sandbox_mode: "workspace-write",
+        approval_policy: "on-request",
+        fork_context: false,
         prompt: "inspect the codebase",
         extra_field: { nested: true }
       }
@@ -67,13 +71,44 @@ test("records start and stop events with full payload JSON", () => {
     assert.equal(run.status, "stopped");
     assert.equal(run.prompt, "inspect the codebase");
     assert.equal(run.lastAssistantMessage, "done");
+    assert.deepEqual(JSON.parse(run.startArgs ?? ""), {
+      agent_id: "agent-1",
+      agent_type: "general",
+      approval_policy: "on-request",
+      cwd: root,
+      extra_field: {
+        nested: true
+      },
+      fork_context: false,
+      model: "gpt-5",
+      model_reasoning_effort: "high",
+      permission_mode: "default",
+      prompt: "inspect the codebase",
+      sandbox_mode: "workspace-write"
+    });
     assert.match(run.startPayload, /"extra_field":\{"nested":true\}/);
     assert.match(run.stopPayload ?? "", /"result":"ok"/);
 
     const events = ledger.eventsForSession("session-a");
     assert.equal(events.length, 2);
     assert.equal(events[0]?.event_name, "SubagentStart");
+    assert.deepEqual(JSON.parse(events[0]?.start_args_json ?? ""), {
+      agent_id: "agent-1",
+      agent_type: "general",
+      approval_policy: "on-request",
+      cwd: root,
+      extra_field: {
+        nested: true
+      },
+      fork_context: false,
+      model: "gpt-5",
+      model_reasoning_effort: "high",
+      permission_mode: "default",
+      prompt: "inspect the codebase",
+      sandbox_mode: "workspace-write"
+    });
     assert.equal(events[1]?.event_name, "SubagentStop");
+    assert.equal(events[1]?.start_args_json, null);
   } finally {
     ledger.close();
     rmSync(root, { recursive: true, force: true });

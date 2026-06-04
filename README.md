@@ -130,7 +130,7 @@ Use an explicit session or project directory when needed:
 npx -y subagent-auto-manager@latest --session 019e87b0-d695-7902-96e1-9672e0a12db6 --cwd /path/to/project
 ```
 
-Default output is pretty medium-detail JSON, filtered to running agents that have not been closed. Medium output keeps only the operational subagent id plus recall fields: agent type, prompt, public state, timing, model, cwd, and last message.
+Default output is pretty medium-detail JSON, filtered to running agents that have not been closed. Medium output keeps only the operational subagent id plus recall fields: agent type, prompt, public state, timing, last message, parsed `startArgs`, model, and cwd.
 
 The public `state` is a single mutually exclusive value: `running`, `stopped`, or `closed`. Internally, the ledger still stores subagent execution status and the closed-thread flag separately.
 
@@ -148,7 +148,14 @@ The public `state` is a single mutually exclusive value: `running`, `stopped`, o
       "agentId": "agent-running",
       "agentType": "general",
       "state": "running",
-      "prompt": "review files and report issues"
+      "prompt": "review files and report issues",
+      "startArgs": {
+        "agent_id": "agent-running",
+        "agent_type": "general",
+        "model": "gpt-5.5",
+        "model_reasoning_effort": "high",
+        "prompt": "review files and report issues"
+      }
     }
   ]
 }
@@ -160,7 +167,7 @@ YAML output is available with `--yaml`:
 npx -y subagent-auto-manager@latest --yaml
 ```
 
-Full-detail output is available with `--full` or `--detail full`. It includes every stored run field plus parsed raw start/stop/close hook payloads:
+Full-detail output is available with `--full` or `--detail full`. It includes every stored run field plus parsed `startArgs` and raw start/stop/close hook payloads:
 
 ```sh
 npx -y subagent-auto-manager@latest --yaml --full
@@ -180,7 +187,7 @@ Each project stores its ledger below:
 
 The CLI isolates sessions with `CODEX_THREAD_ID` by default. Hooks use the `session_id` from the Codex hook JSON.
 
-The database stores queryable columns for common Codex hook fields such as `session_id`, `turn_id`, `agent_id`, `agent_type`, `cwd`, `model`, `permission_mode`, `transcript_path`, `agent_transcript_path`, `prompt`, `last_assistant_message`, `stop_hook_active`, `tool_name`, `tool_use_id`, and `close_target`, plus the complete raw payload JSON for every event.
+The database stores queryable columns for common Codex hook fields such as `session_id`, `turn_id`, `agent_id`, `agent_type`, `cwd`, `model`, `permission_mode`, `transcript_path`, `agent_transcript_path`, `prompt`, `last_assistant_message`, `start_args_json`, `stop_hook_active`, `tool_name`, `tool_use_id`, and `close_target`, plus the complete raw payload JSON for every event. `start_args_json` is a compact JSON snapshot derived from `SubagentStart`: it keeps launch parameters such as agent type, model, reasoning effort, sandbox or approval settings, fork flags, custom fields, and prompt, while excluding lifecycle metadata such as hook event name, session id, turn id, and transcript paths.
 
 ## Publishing
 

@@ -24,12 +24,22 @@ test("medium output keeps common recall and stats fields", () => {
     "closeTime",
     "durationMs",
     "lastAssistantMessage",
+    "startArgs",
     "model",
     "cwd"
   ]);
   assert.equal(item.agentId, "agent-1");
   assert.equal(item.state, "closed");
   assert.equal(item.prompt, "inspect package.json");
+  assert.deepEqual(item.startArgs, {
+    agent_id: "agent-1",
+    agent_type: "explorer",
+    cwd: "D:\\Workspaces\\repo",
+    model: "gpt-5.5",
+    model_reasoning_effort: "high",
+    permission_mode: "bypassPermissions",
+    prompt: "inspect package.json"
+  });
   assert.equal("runKey" in item, false);
   assert.equal("sessionId" in item, false);
   assert.equal("turnId" in item, false);
@@ -55,6 +65,15 @@ test("full output includes all run fields and parsed raw payloads", () => {
   assert.equal(item.runKey, "session-a:agent-1");
   assert.equal(item.sessionId, "session-a");
   assert.equal(item.turnId, "turn-1");
+  assert.deepEqual(item.startArgs, {
+    agent_id: "agent-1",
+    agent_type: "explorer",
+    cwd: "D:\\Workspaces\\repo",
+    model: "gpt-5.5",
+    model_reasoning_effort: "high",
+    permission_mode: "bypassPermissions",
+    prompt: "inspect package.json"
+  });
   assert.equal(item.transcriptPath, "parent.jsonl");
   assert.equal(item.agentTranscriptPath, "agent.jsonl");
   assert.deepEqual(item.startPayload, {
@@ -107,6 +126,8 @@ function run(): SubagentRun {
     durationMs: 12401,
     prompt: "inspect package.json",
     lastAssistantMessage: "done",
+    startArgs:
+      "{\"agent_id\":\"agent-1\",\"agent_type\":\"explorer\",\"cwd\":\"D:\\\\Workspaces\\\\repo\",\"model\":\"gpt-5.5\",\"model_reasoning_effort\":\"high\",\"permission_mode\":\"bypassPermissions\",\"prompt\":\"inspect package.json\"}",
     startPayload: "{\"hook_event_name\":\"SubagentStart\",\"extra_field\":{\"nested\":true}}",
     stopPayload: "{\"hook_event_name\":\"SubagentStop\",\"last_assistant_message\":\"done\"}",
     closePayload: "{\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"close_agent\"}"

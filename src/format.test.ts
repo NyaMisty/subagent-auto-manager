@@ -58,6 +58,7 @@ function run(overrides: Partial<SubagentRun>): SubagentRun {
     durationMs: null,
     prompt: overrides.prompt ?? null,
     lastAssistantMessage: null,
+    startArgs: "{}",
     startPayload: "{}",
     stopPayload: overrides.status === "stopped" ? "{}" : null,
     closePayload: overrides.closed ? "{}" : null

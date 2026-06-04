@@ -35,12 +35,25 @@ test("defaults output to pretty medium JSON filtered to running agents", async (
       "closeTime",
       "durationMs",
       "lastAssistantMessage",
+      "startArgs",
       "model",
       "cwd"
     ]);
     assert.equal(parsed.runs[0].agentId, "agent-1");
     assert.equal(parsed.runs[0].state, "running");
     assert.equal(parsed.runs[0].prompt, "inspect package.json");
+    assert.deepEqual(parsed.runs[0].startArgs, {
+      agent_id: "agent-1",
+      agent_type: "explorer",
+      cwd: root,
+      extra_field: {
+        nested: true
+      },
+      model: "gpt-5.5",
+      model_reasoning_effort: "high",
+      permission_mode: "bypassPermissions",
+      prompt: "inspect package.json"
+    });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -60,6 +73,7 @@ test("supports full JSON list output", async () => {
     assert.equal(parsed.runs[0].runKey, "session-full:agent-1");
     assert.equal(parsed.runs[0].sessionId, "session-full");
     assert.equal(parsed.runs[0].transcriptPath, join(root, "parent.jsonl"));
+    assert.equal(parsed.runs[0].startArgs.model_reasoning_effort, "high");
     assert.deepEqual(parsed.runs[0].startPayload.extra_field, { nested: true });
     assert.equal(parsed.runs[0].stopPayload.last_assistant_message, "done");
   } finally {
@@ -110,6 +124,8 @@ test("supports optional YAML list output", async () => {
     assert.match(result.stdout, /runs:\n  -\n    agentId: "agent-1"/);
     assert.match(result.stdout, /    state: "stopped"/);
     assert.match(result.stdout, /    prompt: "inspect package\.json"/);
+    assert.match(result.stdout, /    startArgs:\n      agent_id: "agent-1"/);
+    assert.match(result.stdout, /      model_reasoning_effort: "high"/);
     assert.equal(result.stdout.includes("runKey:"), false);
     assert.equal(result.stdout.includes("startPayload:"), false);
     assert.match(result.stderr, /filter=all format=yaml/);
@@ -313,6 +329,7 @@ function seedRun(root: string, sessionId: string, status: "running" | "stopped" 
         transcript_path: join(root, "parent.jsonl"),
         agent_transcript_path: join(root, "agent.jsonl"),
         permission_mode: "bypassPermissions",
+        model_reasoning_effort: "high",
         prompt: "inspect package.json",
         extra_field: {
           nested: true

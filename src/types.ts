@@ -39,6 +39,7 @@ export interface SubagentRun {
   durationMs: number | null;
   prompt: string | null;
   lastAssistantMessage: string | null;
+  startArgs: string | null;
   startPayload: string;
   stopPayload: string | null;
   closePayload: string | null;
