@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -359,6 +359,55 @@ test("wait returns when every target is stopped", async () => {
   }
 });
 
+test("wait streams each newly stopped target to stderr", async () => {
+  const root = tempRoot();
+  seedRun(root, "session-wait-stream", "running", "agent-stream");
+  let child: ReturnType<typeof spawn> | null = null;
+
+  try {
+    const cliPath = join(dirname(fileURLToPath(import.meta.url)), "cli.js");
+    child = spawn(
+      process.execPath,
+      [cliPath, "wait", "agent-stream", "--cwd", root, "--timeout-ms", "5000", "--interval-ms", "50"],
+      {
+        env: { ...process.env, CODEX_THREAD_ID: "session-wait-stream" },
+        stdio: ["ignore", "pipe", "pipe"]
+      }
+    );
+    const exit = waitForExit(child);
+
+    let stdout = "";
+    let stderr = "";
+    assert.ok(child.stdout);
+    assert.ok(child.stderr);
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+
+    await delay(150);
+    stopRun(root, "session-wait-stream", "agent-stream");
+    await waitForText(() => stderr, "wait stopped agentId=agent-stream target=agent-stream");
+    const exitCode = await exit;
+
+    assert.equal(exitCode, 0, stderr);
+    const parsed = JSON.parse(stdout);
+    assert.equal(parsed.summary.complete, true);
+    assert.equal(parsed.summary.stopped, 1);
+    assert.equal(parsed.targets[0].state, "stopped");
+    assert.match(stderr, /\[subagent-auto-manager\] wait stopped agentId=agent-stream target=agent-stream type=explorer/);
+  } finally {
+    if (child && child.exitCode === null && !child.killed) {
+      child.kill();
+    }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("wait times out for running or missing targets", async () => {
   const root = tempRoot();
   seedRun(root, "session-wait-timeout", "running", "agent-running");
@@ -434,8 +483,53 @@ function closeRun(root: string, sessionId: string, agentId: string): void {
   }
 }
 
+function stopRun(root: string, sessionId: string, agentId: string): void {
+  const ledger = SubagentLedger.open(root);
+  try {
+    ledger.record({
+      eventName: "SubagentStop",
+      sessionId,
+      projectRoot: root,
+      payload: {
+        hook_event_name: "SubagentStop",
+        session_id: sessionId,
+        turn_id: "turn-1",
+        agent_id: agentId,
+        agent_type: "explorer",
+        cwd: root,
+        transcript_path: join(root, "parent.jsonl"),
+        agent_transcript_path: join(root, "agent.jsonl"),
+        last_assistant_message: "done"
+      }
+    });
+  } finally {
+    ledger.close();
+  }
+}
+
 function tempRoot(): string {
   return mkdtempSync(join(tmpdir(), "subagent-auto-manager-cli-"));
+}
+
+function waitForExit(child: ReturnType<typeof spawn>): Promise<number | null> {
+  return new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code) => resolve(code));
+  });
+}
+
+async function waitForText(read: () => string, text: string, timeoutMs = 2000): Promise<void> {
+  const startMs = Date.now();
+  while (!read().includes(text)) {
+    if (Date.now() - startMs >= timeoutMs) {
+      throw new Error(`timed out waiting for text: ${text}`);
+    }
+    await delay(20);
+  }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function setRunStartTime(root: string, runKey: string, startTime: string): void {

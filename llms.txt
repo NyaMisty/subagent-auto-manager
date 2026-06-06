@@ -16,6 +16,7 @@ npx -y subagent-auto-manager@latest
 
 # 3. Wait for every current running, not-closed agent.
 npx -y subagent-auto-manager@latest wait --timeout-ms 600000 --text
+# During wait, newly stopped agent ids stream on stderr.
 
 # 4. Get stopped agent ids only.
 npx -y subagent-auto-manager@latest --status stopped
@@ -79,6 +80,8 @@ Codex built-in multi-target `wait_agent` may return when any target completes. T
 npx -y subagent-auto-manager@latest wait --timeout-ms 600000 --text
 npx -y subagent-auto-manager@latest wait --agent <agent-a> --agent <agent-b> --timeout-ms 600000 --text
 ```
+
+During wait, stopped agents stream to stderr. Final result stays on stdout.
 
 ## Avoid
 

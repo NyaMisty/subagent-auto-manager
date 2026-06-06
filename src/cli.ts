@@ -457,6 +457,7 @@ async function waitForAgents(
   options: CliOptions
 ): Promise<WaitResult> {
   const startMs = Date.now();
+  const reportedStopped = new Set<string>();
   let targets = uniqueStrings(options.waitTargets);
   if (targets.length === 0 || options.waitAllRunning) {
     const runningTargets = ledger
@@ -468,6 +469,7 @@ async function waitForAgents(
 
   while (true) {
     const statuses = resolveWaitTargets(ledger.listSession(sessionId, true), sessionId, targets);
+    writeWaitProgress(statuses, reportedStopped);
     const elapsedMs = Date.now() - startMs;
     const result = buildWaitResult(sessionId, statuses, options.timeoutMs, elapsedMs);
     if (result.summary.complete || elapsedMs >= options.timeoutMs) {
@@ -540,6 +542,19 @@ function buildWaitResult(sessionId: string, targets: WaitTargetStatus[], timeout
     },
     targets
   };
+}
+
+function writeWaitProgress(targets: WaitTargetStatus[], reportedStopped: Set<string>): void {
+  for (const target of targets) {
+    if (target.state !== "stopped" || reportedStopped.has(target.target)) {
+      continue;
+    }
+
+    reportedStopped.add(target.target);
+    const agentId = target.agentId ?? target.subagentId ?? target.target;
+    const type = target.agentType ? ` type=${target.agentType}` : "";
+    process.stderr.write(`[subagent-auto-manager] wait stopped agentId=${agentId} target=${target.target}${type}\n`);
+  }
 }
 
 function writeWaitResult(result: WaitResult, output: "json" | "yaml" | "text"): void {
@@ -666,7 +681,7 @@ Defaults:
   Status defaults to running. Use --status stopped to list stopped agent ids.
   Broad all/closed listing and --after-timestamp are manual debugging queries.
   reset clears closed marks for the current session, or one agent when --agent is provided.
-  wait polls the hook ledger until every target is stopped. With no explicit targets, wait snapshots current running, not-closed agents.
+  wait polls the hook ledger until every target is stopped. During polling, newly stopped targets stream to stderr. With no explicit targets, wait snapshots current running, not-closed agents.
 
 Hook config command:
   npx -y subagent-auto-manager@latest hook

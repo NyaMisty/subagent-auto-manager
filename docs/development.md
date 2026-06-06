@@ -51,6 +51,8 @@ npx -y subagent-auto-manager@latest wait --session <session-id> --cwd <project> 
 
 `--status all`, `--status closed`, `--all`, `--closed`, `list`, and `--after-timestamp` are broad manual-debugging list queries and require `--human`. `--after-timestamp` uses a Unix timestamp in seconds, filters runs by `startTime`, and lists all statuses after that timestamp.
 
+`wait` streams each newly stopped target to stderr during polling and keeps stdout for the final result document.
+
 ## Verification
 
 Run local checks:
