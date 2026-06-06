@@ -96,6 +96,20 @@ npx -y subagent-auto-manager@latest wait --agent <agent-a> --agent <agent-b> --t
 
 During wait, stopped agents stream to stderr. Final result stays on stdout.
 
+## Reset
+
+```sh
+# After gather/close workflow, bulk-hide completed stopped agents.
+npx -y subagent-auto-manager@latest reset
+
+# Human debugging only: reopen visibility for one closed agent.
+npx -y subagent-auto-manager@latest reset --agent <agent-id> --human
+```
+
+Default `reset`: `stopped -> closed`.
+
+`reset --agent ... --human`: clears one `closed` mark.
+
 ## Avoid
 
 Do not ask for all states, closed-only lists, historical lists, or full payloads during normal agent work. These create large output and are for human debugging only.

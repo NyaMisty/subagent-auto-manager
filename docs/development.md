@@ -45,11 +45,14 @@ npx -y subagent-auto-manager@latest --session <session-id> --cwd <project> --sta
 npx -y subagent-auto-manager@latest --session <session-id> --cwd <project> --status all --yaml --full --human
 npx -y subagent-auto-manager@latest --session <session-id> --cwd <project> --after-timestamp <unix-seconds> --human
 npx -y subagent-auto-manager@latest --session <session-id> --cwd <project> --status closed --human
-npx -y subagent-auto-manager@latest reset --session <session-id> --cwd <project> --agent <agent-id>
+npx -y subagent-auto-manager@latest reset --session <session-id> --cwd <project>
+npx -y subagent-auto-manager@latest reset --session <session-id> --cwd <project> --agent <agent-id> --human
 npx -y subagent-auto-manager@latest wait --session <session-id> --cwd <project> --agent <agent-a> --agent <agent-b> --timeout-ms 600000
 ```
 
 `--status all`, `--status closed`, `--all`, `--closed`, `list`, and `--after-timestamp` are broad manual-debugging list queries and require `--human`. `--after-timestamp` uses a Unix timestamp in seconds, filters runs by `startTime`, and lists all statuses after that timestamp.
+
+`reset` marks stopped, not-closed runs as closed. `reset --agent <id> --human` clears one closed mark and is only for manual debugging.
 
 `wait` streams each newly stopped target to stderr during polling and keeps stdout for the final result document.
 
@@ -81,7 +84,8 @@ npx -y subagent-auto-manager@latest --cwd . --after-timestamp 0 --human
 '@ | npx -y subagent-auto-manager@latest hook
 
 npx -y subagent-auto-manager@latest --cwd . --status closed --human
-npx -y subagent-auto-manager@latest reset --cwd . --agent agent-1
+npx -y subagent-auto-manager@latest reset --cwd .
+npx -y subagent-auto-manager@latest reset --cwd . --agent agent-1 --human
 npx -y subagent-auto-manager@latest wait --cwd . agent-1 --timeout-ms 0 --text
 ```
 

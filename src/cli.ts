@@ -83,14 +83,26 @@ export async function main(argv = process.argv.slice(2), env = process.env): Pro
 
   try {
     if (options.command === "reset") {
-      const result = ledger.resetClosed(sessionId, options.agent);
-      if (options.output === "json") {
-        process.stdout.write(`${JSON.stringify({ sessionId, agentId: options.agent ?? null, ...result }, null, 2)}\n`);
-      } else if (options.output === "yaml") {
-        process.stdout.write(toYaml({ sessionId, agentId: options.agent ?? null, ...result }));
+      if (options.agent) {
+        const result = ledger.resetClosed(sessionId, options.agent);
+        const output = { sessionId, agentId: options.agent, ...result };
+        if (options.output === "json") {
+          process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
+        } else if (options.output === "yaml") {
+          process.stdout.write(toYaml(output));
+        } else {
+          process.stdout.write(`reset closed session=${sessionId} agent=${options.agent} matched=${result.matched} reset=${result.reset}\n`);
+        }
       } else {
-        const target = options.agent ? ` agent=${options.agent}` : "";
-        process.stdout.write(`reset closed session=${sessionId}${target} matched=${result.matched} reset=${result.reset}\n`);
+        const result = ledger.closeStopped(sessionId);
+        const output = { sessionId, agentId: null, ...result };
+        if (options.output === "json") {
+          process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
+        } else if (options.output === "yaml") {
+          process.stdout.write(toYaml(output));
+        } else {
+          process.stdout.write(`reset stopped session=${sessionId} matched=${result.matched} closed=${result.closed}\n`);
+        }
       }
       return;
     }
@@ -391,6 +403,10 @@ function parseArgs(argv: string[]): CliOptions {
 }
 
 function enforceHumanOverride(options: CliOptions): void {
+  if (options.command === "reset" && options.agent && !options.human) {
+    throw new Error("reset --agent requires --human and is intended for manual debugging");
+  }
+
   if (options.human || (options.command !== "running" && options.command !== "list")) {
     return;
   }
@@ -657,7 +673,7 @@ function writeHints(
   } else if (options.status === "stopped") {
     process.stderr.write(`[subagent-auto-manager] next: use \`${base} --running\` for active agent ids.\n`);
   } else if (options.status === "closed") {
-    process.stderr.write(`[subagent-auto-manager] next: use \`${base} reset --agent <id>\` to clear one closed mark, or \`${base} reset\` to clear closed marks for the session.\n`);
+    process.stderr.write(`[subagent-auto-manager] next: use \`${base} reset --agent <id> --human\` to clear one closed mark.\n`);
   } else {
     process.stderr.write(`[subagent-auto-manager] next: use \`${base} --running\` for active agents only, or add \`--full\` for all stored fields.\n`);
   }
@@ -666,7 +682,7 @@ function writeHints(
 function helpText(): string {
   return `Usage:
   subagent-auto-manager [running|list] [--session <id>] [--cwd <project>] [--status running|stopped|closed|all] [--after-timestamp <unix-seconds>] [--json|--yaml|--text] [--detail medium|full]
-  subagent-auto-manager reset [--agent <id>] [--session <id>] [--cwd <project>] [--json|--yaml|--text]
+  subagent-auto-manager reset [--agent <id> --human] [--session <id>] [--cwd <project>] [--json|--yaml|--text]
   subagent-auto-manager wait [agent-id ...] [--all] [--timeout-ms <ms>] [--interval-ms <ms>] [--session <id>] [--cwd <project>] [--json|--yaml|--text]
   subagent-auto-manager hook
 
@@ -680,7 +696,7 @@ Defaults:
   With list/filter arguments, default JSON/YAML runs include only agentId and state.
   Status defaults to running. Use --status stopped to list stopped agent ids.
   Broad all/closed listing and --after-timestamp are manual debugging queries.
-  reset clears closed marks for the current session, or one agent when --agent is provided.
+  reset marks stopped, not-closed agents as closed. With --agent and --human, reset clears one closed mark for manual debugging.
   wait polls the hook ledger until every target is stopped. During polling, newly stopped targets stream to stderr. With no explicit targets, wait snapshots current running, not-closed agents.
 
 Hook config command:

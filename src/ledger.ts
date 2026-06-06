@@ -92,6 +92,11 @@ export interface ResetClosedResult {
   reset: number;
 }
 
+export interface CloseStoppedResult {
+  matched: number;
+  closed: number;
+}
+
 export class SubagentLedger {
   private db: DatabaseSyncInstance;
 
@@ -172,14 +177,41 @@ export class SubagentLedger {
     return { eventId, subagentId, recorded: true };
   }
 
-  resetClosed(sessionId: string, agentId?: string): ResetClosedResult {
-    const params: SQLInputValue[] = [sessionId];
-    const filter = agentId
-      ? "session_id = ? AND (agent_id = ? OR subagent_id = ? OR run_key = ?)"
-      : "session_id = ?";
-    if (agentId) {
-      params.push(agentId, agentId, `${sessionId}:${agentId}`);
-    }
+  closeStopped(sessionId: string): CloseStoppedResult {
+    const now = new Date().toISOString();
+    const matched = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count
+           FROM subagent_runs
+          WHERE session_id = ?
+            AND status = 'stopped'
+            AND closed = 0`
+      )
+      .get(sessionId) as { count: number };
+
+    const result = this.db
+      .prepare(
+        `UPDATE subagent_runs
+            SET closed = 1,
+                close_event_id = NULL,
+                close_time = ?,
+                close_payload = NULL,
+                updated_at = ?
+          WHERE session_id = ?
+            AND status = 'stopped'
+            AND closed = 0`
+      )
+      .run(now, now, sessionId);
+
+    return {
+      matched: Number(matched.count),
+      closed: Number(result.changes)
+    };
+  }
+
+  resetClosed(sessionId: string, agentId: string): ResetClosedResult {
+    const params: SQLInputValue[] = [sessionId, agentId, agentId, `${sessionId}:${agentId}`];
+    const filter = "session_id = ? AND (agent_id = ? OR subagent_id = ? OR run_key = ?)";
 
     const matched = this.db
       .prepare(`SELECT COUNT(*) AS count FROM subagent_runs WHERE ${filter}`)

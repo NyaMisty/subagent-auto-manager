@@ -113,11 +113,16 @@ List only closed subagent threads for manual debugging:
 npx -y subagent-auto-manager@latest --closed --human
 ```
 
-Reset closed marks for the current session, or one agent:
+Mark all stopped, not-closed subagents as closed:
 
 ```sh
 npx -y subagent-auto-manager@latest reset
-npx -y subagent-auto-manager@latest reset --agent 019e87b0-d695-7902-96e1-9672e0a12db6
+```
+
+Clear one closed mark for manual debugging:
+
+```sh
+npx -y subagent-auto-manager@latest reset --agent 019e87b0-d695-7902-96e1-9672e0a12db6 --human
 ```
 
 Wait until every listed subagent has emitted `SubagentStop`:

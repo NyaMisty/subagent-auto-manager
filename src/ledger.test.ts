@@ -308,6 +308,24 @@ test("marks a subagent closed from successful close_agent PostToolUse and clears
     [run] = ledger.listSession("session-close");
     assert.equal(run.closed, true);
 
+    ledger.record({
+      eventName: "SubagentStop",
+      sessionId: "session-close",
+      projectRoot: root,
+      payload: {
+        hook_event_name: "SubagentStop",
+        session_id: "session-close",
+        agent_id: "agent-stopped",
+        cwd: root
+      }
+    });
+    assert.deepEqual(ledger.closeStopped("session-close"), {
+      matched: 1,
+      closed: 1
+    });
+    const stoppedRun = ledger.listSession("session-close").find((candidate) => candidate.agentId === "agent-stopped");
+    assert.equal(stoppedRun?.closed, true);
+
     assert.deepEqual(ledger.resetClosed("session-close", "agent-close"), {
       matched: 1,
       reset: 1

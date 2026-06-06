@@ -217,7 +217,7 @@ test("filters stopped agents explicitly", async () => {
   }
 });
 
-test("filters closed agents and resets one closed mark", async () => {
+test("filters closed agents, closes stopped runs by reset, and clears one closed mark with human override", async () => {
   const root = tempRoot();
   seedRun(root, "session-closed", "stopped", "agent-closed");
   seedRun(root, "session-closed", "stopped", "agent-open");
@@ -227,7 +227,13 @@ test("filters closed agents and resets one closed mark", async () => {
 
   const closed = runCli(["--cwd", root, "--closed", "--human"], { CODEX_THREAD_ID: "session-closed" });
   const running = runCli(["--cwd", root], { CODEX_THREAD_ID: "session-closed" });
-  const reset = runCli(["reset", "--cwd", root, "--agent", "agent-closed", "--text"], {
+  const resetStopped = runCli(["reset", "--cwd", root, "--text"], {
+    CODEX_THREAD_ID: "session-closed"
+  });
+  const resetNeedsHuman = runCli(["reset", "--cwd", root, "--agent", "agent-closed", "--text"], {
+    CODEX_THREAD_ID: "session-closed"
+  }, 1);
+  const resetOne = runCli(["reset", "--cwd", root, "--agent", "agent-closed", "--human", "--text"], {
     CODEX_THREAD_ID: "session-closed"
   });
   const after = runCli(["--cwd", root, "--closed", "--human"], { CODEX_THREAD_ID: "session-closed" });
@@ -247,8 +253,18 @@ test("filters closed agents and resets one closed mark", async () => {
     assert.equal(parsed.runs.some((run: Record<string, unknown>) => "status" in run), false);
     assert.deepEqual(JSON.parse(running.stdout).runs, []);
     assert.match(closed.stderr, /filter=closed/);
-    assert.equal(reset.stdout, "reset closed session=session-closed agent=agent-closed matched=1 reset=1\n");
-    assert.equal(JSON.parse(after.stdout).summary.shown, 1);
+    assert.equal(resetStopped.stdout, "reset stopped session=session-closed matched=1 closed=1\n");
+    assert.equal(resetNeedsHuman.stdout, "");
+    assert.match(resetNeedsHuman.stderr, /reset --agent requires --human/);
+    assert.equal(resetOne.stdout, "reset closed session=session-closed agent=agent-closed matched=1 reset=1\n");
+    const afterParsed = JSON.parse(after.stdout);
+    assert.equal(afterParsed.summary.closed, 2);
+    assert.equal(afterParsed.summary.stopped, 1);
+    assert.equal(afterParsed.summary.shown, 2);
+    assert.deepEqual(
+      afterParsed.runs.map((run: { agentId: string }) => run.agentId).sort(),
+      ["agent-open", "agent-running-closed"]
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
