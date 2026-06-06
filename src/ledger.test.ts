@@ -231,6 +231,48 @@ test("marks a subagent closed from successful close_agent PostToolUse and clears
         hook_event_name: "PostToolUse",
         session_id: "session-close",
         cwd: root,
+        tool_name: "multi_agent_v1close_agent",
+        tool_input: {
+          target: "agent-close"
+        },
+        tool_response: {
+          previous_status: "completed"
+        }
+      }
+    });
+
+    [run] = ledger.listSession("session-close");
+    assert.equal(run.closed, true);
+
+    ledger.record({
+      eventName: "PostToolUse",
+      sessionId: "session-close",
+      projectRoot: root,
+      payload: {
+        hook_event_name: "PostToolUse",
+        session_id: "session-close",
+        cwd: root,
+        tool_name: "multi_agent_v1resume_agent",
+        tool_input: {
+          id: "agent-close"
+        },
+        tool_response: {
+          status: "running"
+        }
+      }
+    });
+
+    [run] = ledger.listSession("session-close");
+    assert.equal(run.closed, false);
+
+    ledger.record({
+      eventName: "PostToolUse",
+      sessionId: "session-close",
+      projectRoot: root,
+      payload: {
+        hook_event_name: "PostToolUse",
+        session_id: "session-close",
+        cwd: root,
         tool_name: "multi_agent_v1.close_agent",
         tool_input: {
           target: "agent-close"
@@ -241,6 +283,28 @@ test("marks a subagent closed from successful close_agent PostToolUse and clears
       }
     });
 
+    [run] = ledger.listSession("session-close");
+    assert.equal(run.closed, true);
+
+    const ignored = ledger.record({
+      eventName: "PostToolUse",
+      sessionId: "session-close",
+      projectRoot: root,
+      payload: {
+        hook_event_name: "PostToolUse",
+        session_id: "session-close",
+        cwd: root,
+        tool_name: "multi_agent_v10close_agent",
+        tool_input: {
+          target: "agent-close"
+        },
+        tool_response: {
+          previous_status: "completed"
+        }
+      }
+    });
+
+    assert.equal(ignored.recorded, false);
     [run] = ledger.listSession("session-close");
     assert.equal(run.closed, true);
 

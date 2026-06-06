@@ -159,7 +159,7 @@ Restore the original hook immediately after the diagnostic:
 
 ```json
 {
-  "matcher": "(^|.*(__|\\.))(close_agent|resume_agent)$",
+  "matcher": "(close_agent|resume_agent)$",
   "hooks": [
     {
       "type": "command",

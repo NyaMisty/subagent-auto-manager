@@ -734,11 +734,11 @@ function toolStateChangeFromPayload(eventName: SupportedEvent, payload: HookInpu
 }
 
 function isCloseAgentTool(toolName: string): boolean {
-  return toolName === "close_agent" || toolName.endsWith("__close_agent") || toolName.endsWith(".close_agent");
+  return toolName === "close_agent" || /^multi_agent_v1(?:[^0-9].*)?close_agent$/.test(toolName);
 }
 
 function isResumeAgentTool(toolName: string): boolean {
-  return toolName === "resume_agent" || toolName.endsWith("__resume_agent") || toolName.endsWith(".resume_agent");
+  return toolName === "resume_agent" || /^multi_agent_v1(?:[^0-9].*)?resume_agent$/.test(toolName);
 }
 
 function isSuccessfulToolResponse(value: unknown, requiredStatusField: string): boolean {

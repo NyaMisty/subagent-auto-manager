@@ -74,6 +74,19 @@ close_agent       -> PostToolUse close_agent   -> closed
 resume_agent      -> PostToolUse resume_agent  -> clears closed
 ```
 
+PostToolUse tool names accepted:
+
+```text
+close_agent
+resume_agent
+multi_agent_v1close_agent
+multi_agent_v1resume_agent
+multi_agent_v1__close_agent
+multi_agent_v1.resume_agent
+```
+
+Do not generalize to `multi_agent_v2...` or `multi_agent_v10...`.
+
 Codex built-in multi-target `wait_agent` may return when any target completes. This package's `wait` is wait-all:
 
 ```sh
@@ -93,6 +106,12 @@ Use this command for `SubagentStart`, `SubagentStop`, and `PostToolUse` close/re
 
 ```sh
 npx -y subagent-auto-manager@latest hook
+```
+
+PostToolUse matcher:
+
+```text
+(close_agent|resume_agent)$
 ```
 
 After changing hooks, open `/hooks` in Codex and trust them.
