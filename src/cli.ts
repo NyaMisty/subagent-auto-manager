@@ -22,8 +22,11 @@ interface CliOptions {
   intervalMs: number;
   output: "json" | "yaml" | "text";
   detail: DetailLevel;
-  state: "running" | "stopped" | "closed" | "all";
+  detailExplicit: boolean;
+  hasListFilter: boolean;
+  status: "running" | "stopped" | "closed" | "all";
   afterTimestamp?: number;
+  human: boolean;
 }
 
 interface WaitTargetStatus {
@@ -102,8 +105,9 @@ export async function main(argv = process.argv.slice(2), env = process.env): Pro
     }
 
     const summary = ledger.summary(sessionId);
-    const runs = filterRuns(ledger.listSession(sessionId, true), options.state, options.afterTimestamp);
-    const result = buildOutput(summary, runs, options.detail);
+    const runs = filterRuns(ledger.listSession(sessionId, true), options.status, options.afterTimestamp);
+    const detail = effectiveDetail(options);
+    const result = buildOutput(summary, runs, detail);
     if (options.output === "json") {
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     } else if (options.output === "yaml") {
@@ -126,7 +130,10 @@ function parseArgs(argv: string[]): CliOptions {
     intervalMs: 1000,
     output: "json",
     detail: "medium",
-    state: "running"
+    detailExplicit: false,
+    hasListFilter: false,
+    status: "running",
+    human: false
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -134,10 +141,12 @@ function parseArgs(argv: string[]): CliOptions {
     if (arg === "list" || arg === "running" || arg === "reset" || arg === "wait" || arg === "hook") {
       options.command = arg;
       if (arg === "list") {
-        options.state = "all";
+        options.status = "all";
+        options.hasListFilter = true;
       }
       if (arg === "running") {
-        options.state = "running";
+        options.status = "running";
+        options.hasListFilter = true;
       }
       continue;
     }
@@ -149,6 +158,11 @@ function parseArgs(argv: string[]): CliOptions {
 
     if (arg === "--version" || arg === "-v") {
       options.command = "version";
+      continue;
+    }
+
+    if (arg === "--human") {
+      options.human = true;
       continue;
     }
 
@@ -171,7 +185,8 @@ function parseArgs(argv: string[]): CliOptions {
       if (options.command === "wait") {
         options.waitAllRunning = true;
       } else {
-        options.state = "all";
+        options.status = "all";
+        options.hasListFilter = true;
       }
       continue;
     }
@@ -182,37 +197,37 @@ function parseArgs(argv: string[]): CliOptions {
     }
 
     if (arg === "--running") {
-      options.state = "running";
+      options.status = "running";
+      options.hasListFilter = true;
       continue;
     }
 
     if (arg === "--stopped") {
-      options.state = "stopped";
+      options.status = "stopped";
+      options.hasListFilter = true;
       continue;
     }
 
     if (arg === "--closed") {
-      options.state = "closed";
+      options.status = "closed";
+      options.hasListFilter = true;
       continue;
     }
 
-    if (arg === "--state" || arg === "--status") {
+    if (arg === "--status") {
       const value = argv[index + 1];
       if (!value) {
-        throw new Error(`${arg} requires a value`);
+        throw new Error("--status requires a value");
       }
-      options.state = parseState(value);
+      options.status = parseStatus(value);
+      options.hasListFilter = true;
       index += 1;
       continue;
     }
 
-    if (arg.startsWith("--state=")) {
-      options.state = parseState(arg.slice("--state=".length));
-      continue;
-    }
-
     if (arg.startsWith("--status=")) {
-      options.state = parseState(arg.slice("--status=".length));
+      options.status = parseStatus(arg.slice("--status=".length));
+      options.hasListFilter = true;
       continue;
     }
 
@@ -222,22 +237,26 @@ function parseArgs(argv: string[]): CliOptions {
         throw new Error("--after-timestamp requires a value");
       }
       options.afterTimestamp = parseUnixTimestamp(value, "--after-timestamp");
+      options.hasListFilter = true;
       index += 1;
       continue;
     }
 
     if (arg.startsWith("--after-timestamp=")) {
       options.afterTimestamp = parseUnixTimestamp(arg.slice("--after-timestamp=".length), "--after-timestamp");
+      options.hasListFilter = true;
       continue;
     }
 
     if (arg === "--medium") {
       options.detail = "medium";
+      options.detailExplicit = true;
       continue;
     }
 
     if (arg === "--full") {
       options.detail = "full";
+      options.detailExplicit = true;
       continue;
     }
 
@@ -247,12 +266,14 @@ function parseArgs(argv: string[]): CliOptions {
         throw new Error("--detail requires a value");
       }
       options.detail = parseDetail(value);
+      options.detailExplicit = true;
       index += 1;
       continue;
     }
 
     if (arg.startsWith("--detail=")) {
       options.detail = parseDetail(arg.slice("--detail=".length));
+      options.detailExplicit = true;
       continue;
     }
 
@@ -361,18 +382,30 @@ function parseArgs(argv: string[]): CliOptions {
   }
 
   if ((options.command === "running" || options.command === "list") && options.afterTimestamp !== undefined) {
-    options.state = "all";
+    options.status = "all";
   }
+
+  enforceHumanOverride(options);
 
   return options;
 }
 
-function parseState(value: string): "running" | "stopped" | "closed" | "all" {
+function enforceHumanOverride(options: CliOptions): void {
+  if (options.human || (options.command !== "running" && options.command !== "list")) {
+    return;
+  }
+
+  if (options.status === "all" || options.status === "closed") {
+    throw new Error(`--status ${options.status} requires --human and is intended for manual debugging`);
+  }
+}
+
+function parseStatus(value: string): "running" | "stopped" | "closed" | "all" {
   if (value === "running" || value === "stopped" || value === "closed" || value === "all") {
     return value;
   }
 
-  throw new Error(`unsupported state filter: ${value}`);
+  throw new Error(`unsupported status filter: ${value}`);
 }
 
 function parseDetail(value: string): DetailLevel {
@@ -381,6 +414,14 @@ function parseDetail(value: string): DetailLevel {
   }
 
   throw new Error(`unsupported detail level: ${value}`);
+}
+
+function effectiveDetail(options: CliOptions): DetailLevel {
+  if (options.detailExplicit) {
+    return options.detail;
+  }
+
+  return options.hasListFilter ? "compact" : "summary";
 }
 
 function parseMilliseconds(value: string, label: string): number {
@@ -561,20 +602,20 @@ function delay(ms: number): Promise<void> {
 
 function filterRuns(
   runs: SubagentRun[],
-  state: "running" | "stopped" | "closed" | "all",
+  status: "running" | "stopped" | "closed" | "all",
   afterTimestamp?: number
 ): SubagentRun[] {
-  const stateFiltered =
-    state === "all"
+  const statusFiltered =
+    status === "all"
       ? runs
-      : runs.filter((run) => publicRunState(run) === state);
+      : runs.filter((run) => publicRunState(run) === status);
 
   if (afterTimestamp === undefined) {
-    return stateFiltered;
+    return statusFiltered;
   }
 
   const afterMs = afterTimestamp * 1000;
-  return stateFiltered.filter((run) => new Date(run.startTime).getTime() > afterMs);
+  return statusFiltered.filter((run) => new Date(run.startTime).getTime() > afterMs);
 }
 
 function writeHints(
@@ -583,10 +624,11 @@ function writeHints(
   shown: number,
   total: number
 ): void {
+  const detail = effectiveDetail(options);
   const pieces = [
-    `filter=${options.state}`,
+    `filter=${options.status}`,
     `format=${options.output}`,
-    `detail=${options.detail}`,
+    `detail=${detail}`,
     `session=${sessionId}`
   ];
   if (options.afterTimestamp !== undefined) {
@@ -595,20 +637,20 @@ function writeHints(
   process.stderr.write(`[subagent-auto-manager] ${pieces.join(" ")} shown=${shown}/${total}\n`);
 
   const base = "npx -y subagent-auto-manager@latest";
-  if (options.state === "running") {
-    process.stderr.write(`[subagent-auto-manager] next: use \`${base} --state all\` to include stopped agents, \`${base} --state stopped\` for completed agents, or \`${base} --state closed\` for closed threads.\n`);
-  } else if (options.state === "stopped") {
-    process.stderr.write(`[subagent-auto-manager] next: use \`${base} --state running\` for active agents, or \`${base} --state all\` for the full session list.\n`);
-  } else if (options.state === "closed") {
+  if (options.status === "running") {
+    process.stderr.write(`[subagent-auto-manager] next: use \`${base} wait --timeout-ms 600000 --text\` to wait for the current running agents, or \`${base} --status stopped\` for completed agent ids.\n`);
+  } else if (options.status === "stopped") {
+    process.stderr.write(`[subagent-auto-manager] next: use \`${base} --running\` for active agent ids.\n`);
+  } else if (options.status === "closed") {
     process.stderr.write(`[subagent-auto-manager] next: use \`${base} reset --agent <id>\` to clear one closed mark, or \`${base} reset\` to clear closed marks for the session.\n`);
   } else {
-    process.stderr.write(`[subagent-auto-manager] next: use \`${base} --state running\` for active agents only, or add \`--full\` for all stored fields.\n`);
+    process.stderr.write(`[subagent-auto-manager] next: use \`${base} --running\` for active agents only, or add \`--full\` for all stored fields.\n`);
   }
 }
 
 function helpText(): string {
   return `Usage:
-  subagent-auto-manager [running|list] [--session <id>] [--cwd <project>] [--state running|stopped|closed|all] [--after-timestamp <unix-seconds>] [--json|--yaml|--text] [--detail medium|full]
+  subagent-auto-manager [running|list] [--session <id>] [--cwd <project>] [--status running|stopped|closed|all] [--after-timestamp <unix-seconds>] [--json|--yaml|--text] [--detail medium|full]
   subagent-auto-manager reset [--agent <id>] [--session <id>] [--cwd <project>] [--json|--yaml|--text]
   subagent-auto-manager wait [agent-id ...] [--all] [--timeout-ms <ms>] [--interval-ms <ms>] [--session <id>] [--cwd <project>] [--json|--yaml|--text]
   subagent-auto-manager hook
@@ -617,9 +659,12 @@ Defaults:
   --session defaults to CODEX_THREAD_ID.
   --cwd defaults to the current working directory.
   Output defaults to JSON. Use --yaml for YAML.
-  Detail defaults to medium. Use --full or --detail full for all stored fields and raw payloads.
-  State defaults to running. Use --state all or list to include every state. Shorthand filters --running, --stopped, --closed, and --all are also accepted.
-  --after-timestamp lists all statuses whose start time is after the Unix timestamp in seconds.
+  Detail defaults to summary with no list/filter arguments, and compact for list/filter arguments.
+  Use --medium for recall fields, or --full/--detail full for all stored fields and raw payloads.
+  With no list/filter arguments, JSON/YAML output hides runs and returns only summary.
+  With list/filter arguments, default JSON/YAML runs include only agentId and state.
+  Status defaults to running. Use --status stopped to list stopped agent ids.
+  Broad all/closed listing and --after-timestamp are manual debugging queries.
   reset clears closed marks for the current session, or one agent when --agent is provided.
   wait polls the hook ledger until every target is stopped. With no explicit targets, wait snapshots current running, not-closed agents.
 

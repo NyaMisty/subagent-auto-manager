@@ -3,6 +3,30 @@ import { test } from "node:test";
 import { buildOutput } from "./output.js";
 import type { SessionSummary, SubagentRun } from "./types.js";
 
+test("summary output hides runs", () => {
+  const output = buildOutput(summary(), [run()], "summary");
+
+  assert.deepEqual(output.summary, {
+    running: 0,
+    stopped: 0,
+    closed: 1,
+    total: 1,
+    shown: 1
+  });
+  assert.deepEqual(output.runs, []);
+});
+
+test("compact output keeps only agent id and state", () => {
+  const output = buildOutput(summary(), [run()], "compact");
+  const [item] = output.runs as Record<string, unknown>[];
+
+  assert.deepEqual(Object.keys(item), ["agentId", "state"]);
+  assert.deepEqual(item, {
+    agentId: "agent-1",
+    state: "closed"
+  });
+});
+
 test("medium output keeps common recall and stats fields", () => {
   const output = buildOutput(summary(), [run()], "medium");
   const [item] = output.runs as Record<string, unknown>[];

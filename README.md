@@ -79,19 +79,27 @@ List currently running, not-closed subagents for the current Codex thread:
 npx -y subagent-auto-manager@latest
 ```
 
-List all running and historical subagents:
+List currently running subagent ids:
 
 ```sh
-npx -y subagent-auto-manager@latest --all
+npx -y subagent-auto-manager@latest --running
 ```
 
-List all statuses for agents started after a Unix timestamp in seconds:
+List only stopped, not-closed subagents:
 
 ```sh
-npx -y subagent-auto-manager@latest --after-timestamp 1780531200
+npx -y subagent-auto-manager@latest --status stopped
 ```
 
-`--after-timestamp` filters by subagent `startTime` and shows running, stopped, and closed agents.
+Broad historical queries are intended for manual debugging only and require `--human`:
+
+```sh
+npx -y subagent-auto-manager@latest --status all --human
+npx -y subagent-auto-manager@latest --status closed --human
+npx -y subagent-auto-manager@latest --after-timestamp 1780531200 --human
+```
+
+`--all`, `list`, and `--closed` are shorthand for these broad/debug filters and also require `--human`.
 
 List only stopped, not-closed subagents:
 
@@ -99,13 +107,11 @@ List only stopped, not-closed subagents:
 npx -y subagent-auto-manager@latest --stopped
 ```
 
-List only closed subagent threads:
+List only closed subagent threads for manual debugging:
 
 ```sh
-npx -y subagent-auto-manager@latest --closed
+npx -y subagent-auto-manager@latest --closed --human
 ```
-
-The equivalent explicit filter is `--state running`, `--state stopped`, `--state closed`, or `--state all`. The older `--status` spelling remains accepted as a compatibility alias.
 
 Reset closed marks for the current session, or one agent:
 
@@ -138,9 +144,9 @@ Use an explicit session or project directory when needed:
 npx -y subagent-auto-manager@latest --session 019e87b0-d695-7902-96e1-9672e0a12db6 --cwd /path/to/project
 ```
 
-Default output is pretty medium-detail JSON, filtered to running agents that have not been closed. Medium output keeps only the operational subagent id plus recall fields: agent type, prompt, public state, timing, last message, parsed `startArgs`, model, and cwd.
+With no list or filter arguments, JSON/YAML output returns only the summary and hides `runs`.
 
-The public `state` is a single mutually exclusive value: `running`, `stopped`, or `closed`. Internally, the ledger still stores subagent execution status and the closed-thread flag separately.
+With list or filter arguments, default JSON/YAML output keeps each run compact: only `agentId` and `state`.
 
 ```json
 {
@@ -154,16 +160,7 @@ The public `state` is a single mutually exclusive value: `running`, `stopped`, o
   "runs": [
     {
       "agentId": "agent-running",
-      "agentType": "general",
-      "state": "running",
-      "prompt": "review files and report issues",
-      "startArgs": {
-        "agent_id": "agent-running",
-        "agent_type": "general",
-        "model": "gpt-5.5",
-        "model_reasoning_effort": "high",
-        "prompt": "review files and report issues"
-      }
+      "state": "running"
     }
   ]
 }
@@ -174,6 +171,8 @@ YAML output is available with `--yaml`:
 ```sh
 npx -y subagent-auto-manager@latest --yaml
 ```
+
+Medium-detail output is available with `--medium`. It includes recall fields such as prompt, timing, model, cwd, and parsed `startArgs`.
 
 Full-detail output is available with `--full` or `--detail full`. It includes every stored run field plus parsed `startArgs` and raw start/stop/close hook payloads:
 

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`subagent-auto-manager` records Codex subagent lifecycle hook payloads into a project-local SQLite ledger and exposes filtered medium or full detail JSON/YAML CLI views by session. It also records state-changing `PostToolUse` calls for `close_agent` and `resume_agent` so closed thread state can be tracked separately from subagent turn completion. Unrelated `PostToolUse` calls are ignored.
+`subagent-auto-manager` records Codex subagent lifecycle hook payloads into a project-local SQLite ledger and exposes compact, medium, or full detail JSON/YAML CLI views by session. It also records state-changing `PostToolUse` calls for `close_agent` and `resume_agent` so closed thread state can be tracked separately from subagent turn completion. Unrelated `PostToolUse` calls are ignored.
 
 ## Package Shape
 
@@ -12,7 +12,7 @@
 - `src/paths.ts`: resolves the project-local DB path.
 - `src/session.ts`: separates hook session lookup from CLI session lookup.
 - `src/format.ts`: optional compact human-readable output for `--text`.
-- `src/output.ts`: medium/full detail output projection.
+- `src/output.ts`: summary/compact/medium/full detail output projection.
 - `src/yaml.ts`: dependency-free YAML output for `--yaml`.
 
 The package uses Node's built-in `node:sqlite`, so Node.js `>=22.14.0` is required.
@@ -38,18 +38,18 @@ The database stores:
 
 Hooks use the `session_id` field provided by Codex in the hook JSON.
 
-The CLI defaults to `CODEX_THREAD_ID`, running-only filtering, medium detail, and pretty JSON. Public list output exposes one mutually exclusive `state` per run: `running`, `stopped`, or `closed`. It also accepts:
+The CLI defaults to `CODEX_THREAD_ID`, running-only filtering, and pretty JSON. With no list/filter arguments it hides `runs` and returns summary only. With list/filter arguments it defaults to compact runs containing only `agentId` and `state`. It also accepts:
 
 ```sh
-npx -y subagent-auto-manager@latest --session <session-id> --cwd <project> --all --yaml --full
-npx -y subagent-auto-manager@latest --session <session-id> --cwd <project> --state closed
-npx -y subagent-auto-manager@latest --session <session-id> --cwd <project> --after-timestamp <unix-seconds>
-npx -y subagent-auto-manager@latest --session <session-id> --cwd <project> --closed
+npx -y subagent-auto-manager@latest --session <session-id> --cwd <project> --status stopped
+npx -y subagent-auto-manager@latest --session <session-id> --cwd <project> --status all --yaml --full --human
+npx -y subagent-auto-manager@latest --session <session-id> --cwd <project> --after-timestamp <unix-seconds> --human
+npx -y subagent-auto-manager@latest --session <session-id> --cwd <project> --status closed --human
 npx -y subagent-auto-manager@latest reset --session <session-id> --cwd <project> --agent <agent-id>
 npx -y subagent-auto-manager@latest wait --session <session-id> --cwd <project> --agent <agent-a> --agent <agent-b> --timeout-ms 600000
 ```
 
-`--after-timestamp` uses a Unix timestamp in seconds, filters runs by `startTime`, and lists all statuses after that timestamp.
+`--status all`, `--status closed`, `--all`, `--closed`, `list`, and `--after-timestamp` are broad manual-debugging list queries and require `--human`. `--after-timestamp` uses a Unix timestamp in seconds, filters runs by `startTime`, and lists all statuses after that timestamp.
 
 ## Verification
 
@@ -68,15 +68,17 @@ Manual hook stdin smoke:
 '@ | npx -y subagent-auto-manager@latest hook
 
 $env:CODEX_THREAD_ID='manual-smoke'
-npx -y subagent-auto-manager@latest --cwd . --all
-npx -y subagent-auto-manager@latest --cwd . --all --yaml
-npx -y subagent-auto-manager@latest --cwd . --after-timestamp 0
+npx -y subagent-auto-manager@latest --cwd .
+npx -y subagent-auto-manager@latest --cwd . --status stopped
+npx -y subagent-auto-manager@latest --cwd . --status all --human
+npx -y subagent-auto-manager@latest --cwd . --status all --yaml --human
+npx -y subagent-auto-manager@latest --cwd . --after-timestamp 0 --human
 
 @'
 {"hook_event_name":"PostToolUse","session_id":"manual-smoke","cwd":"D:\\Workspaces\\UtilWorkspace\\LLM\\subagent_auto_manager","tool_name":"close_agent","tool_input":{"target":"agent-1"},"tool_response":{"previous_status":"completed"}}
 '@ | npx -y subagent-auto-manager@latest hook
 
-npx -y subagent-auto-manager@latest --cwd . --closed
+npx -y subagent-auto-manager@latest --cwd . --status closed --human
 npx -y subagent-auto-manager@latest reset --cwd . --agent agent-1
 npx -y subagent-auto-manager@latest wait --cwd . agent-1 --timeout-ms 0 --text
 ```

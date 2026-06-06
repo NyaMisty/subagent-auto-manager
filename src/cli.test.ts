@@ -12,7 +12,7 @@ import { databasePath } from "./paths.js";
 const require = createRequire(import.meta.url);
 const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
 
-test("defaults output to pretty medium JSON filtered to running agents", async () => {
+test("defaults output to summary JSON without runs", async () => {
   const root = tempRoot();
   seedRun(root, "session-json", "running");
   seedRun(root, "session-json", "stopped", "agent-stopped");
@@ -20,8 +20,9 @@ test("defaults output to pretty medium JSON filtered to running agents", async (
 
   try {
     assert.match(result.stdout, /^\{\n  "summary":/);
-    assert.match(result.stderr, /filter=running format=json detail=medium session=session-json shown=1\/2/);
-    assert.match(result.stderr, /--state all/);
+    assert.match(result.stderr, /filter=running format=json detail=summary session=session-json shown=1\/2/);
+    assert.match(result.stderr, /--status stopped/);
+    assert.equal(result.stderr.includes("--all"), false);
     const parsed = JSON.parse(result.stdout);
     assert.deepEqual(parsed.summary, {
       running: 1,
@@ -30,6 +31,49 @@ test("defaults output to pretty medium JSON filtered to running agents", async (
       total: 2,
       shown: 1
     });
+    assert.deepEqual(parsed.runs, []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("filter output defaults to compact agent id and state", async () => {
+  const root = tempRoot();
+  seedRun(root, "session-compact", "running");
+  seedRun(root, "session-compact", "stopped", "agent-stopped");
+  const result = runCli(["--cwd", root, "--all", "--human"], { CODEX_THREAD_ID: "session-compact" });
+
+  try {
+    const parsed = JSON.parse(result.stdout);
+    assert.equal(parsed.summary.shown, 2);
+    assert.deepEqual(
+      parsed.runs.map((run: Record<string, unknown>) => Object.keys(run)),
+      [
+        ["agentId", "state"],
+        ["agentId", "state"]
+      ]
+    );
+    assert.deepEqual(
+      parsed.runs.map((run: { agentId: string; state: string }) => [run.agentId, run.state]).sort(),
+      [
+        ["agent-1", "running"],
+        ["agent-stopped", "stopped"]
+      ]
+    );
+    assert.match(result.stderr, /filter=all format=json detail=compact session=session-compact shown=2\/2/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("supports explicit medium JSON list output", async () => {
+  const root = tempRoot();
+  seedRun(root, "session-json-medium", "running");
+  seedRun(root, "session-json-medium", "stopped", "agent-stopped");
+  const result = runCli(["--cwd", root, "--medium"], { CODEX_THREAD_ID: "session-json-medium" });
+
+  try {
+    const parsed = JSON.parse(result.stdout);
     assert.deepEqual(Object.keys(parsed.runs[0]), [
       "agentId",
       "agentType",
@@ -67,7 +111,7 @@ test("defaults output to pretty medium JSON filtered to running agents", async (
 test("supports full JSON list output", async () => {
   const root = tempRoot();
   seedRun(root, "session-full");
-  const result = runCli(["--cwd", root, "--all", "--full"], { CODEX_THREAD_ID: "session-full" });
+  const result = runCli(["--cwd", root, "--all", "--full", "--human"], { CODEX_THREAD_ID: "session-full" });
 
   try {
     const parsed = JSON.parse(result.stdout);
@@ -101,7 +145,7 @@ test("defaults empty list output to JSON", async () => {
       },
       runs: []
     });
-    assert.match(result.stderr, /filter=running/);
+    assert.match(result.stderr, /filter=running format=json detail=summary/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -122,7 +166,7 @@ test("supports optional text list output", async () => {
 test("supports optional YAML list output", async () => {
   const root = tempRoot();
   seedRun(root, "session-yaml");
-  const result = runCli(["--cwd", root, "--yaml", "--all"], { CODEX_THREAD_ID: "session-yaml" });
+  const result = runCli(["--cwd", root, "--yaml", "--all", "--medium", "--human"], { CODEX_THREAD_ID: "session-yaml" });
 
   try {
     assert.match(result.stdout, /summary:\n  running: 0\n  stopped: 1\n  closed: 0\n  total: 1\n  shown: 1/);
@@ -133,7 +177,7 @@ test("supports optional YAML list output", async () => {
     assert.match(result.stdout, /      model_reasoning_effort: "high"/);
     assert.equal(result.stdout.includes("runKey:"), false);
     assert.equal(result.stdout.includes("startPayload:"), false);
-    assert.match(result.stderr, /filter=all format=yaml/);
+    assert.match(result.stderr, /filter=all format=yaml detail=medium/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -142,7 +186,7 @@ test("supports optional YAML list output", async () => {
 test("supports optional full YAML list output", async () => {
   const root = tempRoot();
   seedRun(root, "session-full-yaml");
-  const result = runCli(["--cwd", root, "--yaml", "--full", "--all"], { CODEX_THREAD_ID: "session-full-yaml" });
+  const result = runCli(["--cwd", root, "--yaml", "--full", "--all", "--human"], { CODEX_THREAD_ID: "session-full-yaml" });
 
   try {
     assert.match(result.stdout, /sessionId: "session-full-yaml"/);
@@ -166,7 +210,8 @@ test("filters stopped agents explicitly", async () => {
     assert.equal(parsed.summary.shown, 1);
     assert.equal(parsed.runs[0].agentId, "agent-stopped");
     assert.equal(parsed.runs[0].state, "stopped");
-    assert.match(result.stderr, /filter=stopped/);
+    assert.deepEqual(Object.keys(parsed.runs[0]), ["agentId", "state"]);
+    assert.match(result.stderr, /filter=stopped format=json detail=compact/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -180,17 +225,15 @@ test("filters closed agents and resets one closed mark", async () => {
   closeRun(root, "session-closed", "agent-closed");
   closeRun(root, "session-closed", "agent-running-closed");
 
-  const closed = runCli(["--cwd", root, "--closed"], { CODEX_THREAD_ID: "session-closed" });
-  const stateClosed = runCli(["--cwd", root, "--state", "closed"], { CODEX_THREAD_ID: "session-closed" });
+  const closed = runCli(["--cwd", root, "--closed", "--human"], { CODEX_THREAD_ID: "session-closed" });
   const running = runCli(["--cwd", root], { CODEX_THREAD_ID: "session-closed" });
   const reset = runCli(["reset", "--cwd", root, "--agent", "agent-closed", "--text"], {
     CODEX_THREAD_ID: "session-closed"
   });
-  const after = runCli(["--cwd", root, "--closed"], { CODEX_THREAD_ID: "session-closed" });
+  const after = runCli(["--cwd", root, "--closed", "--human"], { CODEX_THREAD_ID: "session-closed" });
 
   try {
     const parsed = JSON.parse(closed.stdout);
-    assert.deepEqual(JSON.parse(stateClosed.stdout).runs, parsed.runs);
     assert.equal(parsed.summary.running, 0);
     assert.equal(parsed.summary.stopped, 1);
     assert.equal(parsed.summary.closed, 2);
@@ -211,6 +254,37 @@ test("filters closed agents and resets one closed mark", async () => {
   }
 });
 
+test("requires human override for broad and closed list queries", async () => {
+  const root = tempRoot();
+  seedRun(root, "session-human", "running");
+  seedRun(root, "session-human", "stopped", "agent-stopped");
+  closeRun(root, "session-human", "agent-stopped");
+
+  try {
+    for (const args of [
+      ["--cwd", root, "--status", "all"],
+      ["--cwd", root, "--status=all"],
+      ["--cwd", root, "--all"],
+      ["list", "--cwd", root],
+      ["--cwd", root, "--status", "closed"],
+      ["--cwd", root, "--status=closed"],
+      ["--cwd", root, "--closed"],
+      ["--cwd", root, "--after-timestamp", "0"]
+    ]) {
+      const result = runCli(args, { CODEX_THREAD_ID: "session-human" }, 1);
+      assert.equal(result.stdout, "");
+      assert.match(result.stderr, /--status (all|closed) requires --human/);
+    }
+
+    const all = runCli(["--cwd", root, "--status", "all", "--human"], { CODEX_THREAD_ID: "session-human" });
+    const closed = runCli(["--human", "--cwd", root, "--status=closed"], { CODEX_THREAD_ID: "session-human" });
+    assert.equal(JSON.parse(all.stdout).summary.shown, 2);
+    assert.equal(JSON.parse(closed.stdout).summary.shown, 1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("after-timestamp lists all agent statuses started after the Unix timestamp", async () => {
   const root = tempRoot();
   const sessionId = "session-after";
@@ -225,7 +299,7 @@ test("after-timestamp lists all agent statuses started after the Unix timestamp"
   setRunStartTime(root, `${sessionId}:agent-stopped-after`, "2026-06-04T00:02:00.000Z");
   setRunStartTime(root, `${sessionId}:agent-closed-after`, "2026-06-04T00:03:00.000Z");
 
-  const result = runCli(["--cwd", root, "--after-timestamp", String(threshold)], {
+  const result = runCli(["--cwd", root, "--after-timestamp", String(threshold), "--human"], {
     CODEX_THREAD_ID: sessionId
   });
 
@@ -237,8 +311,9 @@ test("after-timestamp lists all agent statuses started after the Unix timestamp"
       parsed.runs.map((run: { agentId: string }) => run.agentId).sort(),
       ["agent-closed-after", "agent-running-after", "agent-stopped-after"]
     );
-    assert.equal(parsed.runs.some((run: { agentId: string; closed: boolean }) => run.agentId === "agent-closed-after" && run.closed), true);
-    assert.equal(parsed.runs.some((run: { agentId: string; status: string }) => run.agentId === "agent-stopped-after" && run.status === "stopped"), true);
+    assert.equal(parsed.runs.some((run: { agentId: string; state: string }) => run.agentId === "agent-closed-after" && run.state === "closed"), true);
+    assert.equal(parsed.runs.some((run: { agentId: string; state: string }) => run.agentId === "agent-stopped-after" && run.state === "stopped"), true);
+    assert.equal(parsed.runs.every((run: Record<string, unknown>) => Object.keys(run).join(",") === "agentId,state"), true);
     assert.match(result.stderr, /filter=all/);
     assert.match(result.stderr, new RegExp(`after_timestamp=${threshold}`));
   } finally {

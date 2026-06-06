@@ -1,7 +1,7 @@
 import type { SessionSummary, SubagentRun } from "./types.js";
 import { publicRunState } from "./state.js";
 
-export type DetailLevel = "medium" | "full";
+export type DetailLevel = "summary" | "compact" | "medium" | "full";
 
 export interface OutputDocument {
   summary: unknown;
@@ -11,7 +11,10 @@ export interface OutputDocument {
 export function buildOutput(summary: SessionSummary, runs: SubagentRun[], detail: DetailLevel): OutputDocument {
   return {
     summary: detail === "full" ? fullSummary(summary, runs) : mediumSummary(summary, runs),
-    runs: runs.map((run) => (detail === "full" ? fullRun(run) : mediumRun(run)))
+    runs:
+      detail === "summary"
+        ? []
+        : runs.map((run) => (detail === "full" ? fullRun(run) : detail === "medium" ? mediumRun(run) : compactRun(run)))
   };
 }
 
@@ -46,6 +49,13 @@ function mediumRun(run: SubagentRun): Record<string, unknown> {
     startArgs: run.startArgs === null ? null : parsePayload(run.startArgs),
     model: run.model,
     cwd: run.cwd
+  };
+}
+
+function compactRun(run: SubagentRun): Record<string, unknown> {
+  return {
+    agentId: run.agentId ?? run.subagentId,
+    state: run.closed ? "closed" : run.status
   };
 }
 

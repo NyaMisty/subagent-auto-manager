@@ -35,7 +35,7 @@ Write this file outside the repository so the test does not dirty the worktree:
 ```bat
 @echo off
 cd /d D:\Workspaces\UtilWorkspace\LLM\subagent_auto_manager\test
-codex.cmd exec --json --skip-git-repo-check --sandbox danger-full-access --dangerously-bypass-approvals-and-sandbox "Hook verification only. Do not edit files. Use the multi-agent tools: spawn one subagent with message 'Reply READY only and then stop'; wait for that subagent to complete; close that subagent; then run the CLI command `npx -y subagent-auto-manager@latest --cwd . --session $env:CODEX_THREAD_ID --all --full`; final reply must include SAM_POSTTOOL_DONE, the parent session id, the subagent id, and the CLI summary."
+codex.cmd exec --json --skip-git-repo-check --sandbox danger-full-access --dangerously-bypass-approvals-and-sandbox "Hook verification only. Do not edit files. Use the multi-agent tools: spawn one subagent with message 'Reply READY only and then stop'; wait for that subagent to complete; close that subagent; then run the CLI command `npx -y subagent-auto-manager@latest --cwd . --session $env:CODEX_THREAD_ID --status all --full --human`; final reply must include SAM_POSTTOOL_DONE, the parent session id, the subagent id, and the CLI summary."
 echo __CODEX_EXIT:%ERRORLEVEL%
 timeout /t 30 /nobreak >nul
 ```
@@ -94,7 +94,7 @@ It should also show `collab_tool_call` entries for:
 Use the parent `thread_id` from the screen log and the same cwd used by the Windows runner:
 
 ```powershell
-npx -y subagent-auto-manager@latest --cwd D:\Workspaces\UtilWorkspace\LLM\subagent_auto_manager\test --session <thread-id> --all --full
+npx -y subagent-auto-manager@latest --cwd D:\Workspaces\UtilWorkspace\LLM\subagent_auto_manager\test --session <thread-id> --status all --full --human
 ```
 
 Expected successful close tracking:

@@ -1,0 +1,103 @@
+# subagent-auto-manager TLDR
+
+Only use this as a small supplement to Codex built-in agent tools.
+
+Use it to check counts, states, and agent ids. Do not use it to replace `spawn_agent`, `wait_agent`, `resume_agent`, `close_agent`, or result gathering.
+
+Minimize tool calls. Keep output small. Prefer counts first, then narrow id lists. Avoid broad/history/detail queries unless a human is debugging.
+
+## One Scenario: Many Agents In Waves
+
+```sh
+# 1. Quick counts only. No runs.
+npx -y subagent-auto-manager@latest
+
+# 2. Launch many agents with Codex built-in spawn_agent.
+
+# 3. Wait for every current running, not-closed agent.
+npx -y subagent-auto-manager@latest wait --timeout-ms 600000 --text
+
+# 4. Get stopped agent ids only.
+npx -y subagent-auto-manager@latest --status stopped
+
+# 5. Gather each stopped agent with Codex built-in tools, then close_agent when done.
+```
+
+Default no-arg output:
+
+```json
+{
+  "summary": {
+    "running": 12,
+    "stopped": 0,
+    "closed": 0,
+    "total": 12,
+    "shown": 12
+  },
+  "runs": []
+}
+```
+
+Filtered output returns only:
+
+```json
+{
+  "summary": {
+    "running": 0,
+    "stopped": 12,
+    "closed": 0,
+    "total": 12,
+    "shown": 12
+  },
+  "runs": [
+    { "agentId": "agent-a", "state": "stopped" },
+    { "agentId": "agent-b", "state": "stopped" }
+  ]
+}
+```
+
+## States
+
+`running`: `SubagentStart` seen; no `SubagentStop`; not closed.
+
+`stopped`: `SubagentStop` seen. The subagent turn ended. The thread may still be open.
+
+`closed`: successful Codex built-in `close_agent` was seen. `resume_agent` clears this mark.
+
+## Built-In Tool Mapping
+
+```text
+spawn_agent       -> SubagentStart             -> running
+subagent finishes -> SubagentStop              -> stopped
+close_agent       -> PostToolUse close_agent   -> closed
+resume_agent      -> PostToolUse resume_agent  -> clears closed
+```
+
+Codex built-in multi-target `wait_agent` may return when any target completes. This package's `wait` is wait-all:
+
+```sh
+npx -y subagent-auto-manager@latest wait --timeout-ms 600000 --text
+npx -y subagent-auto-manager@latest wait --agent <agent-a> --agent <agent-b> --timeout-ms 600000 --text
+```
+
+## Avoid
+
+Do not ask for all states, closed-only lists, historical lists, or full payloads during normal agent work. These create large output and are for human debugging only.
+
+## Hook Setup
+
+Use this command for `SubagentStart`, `SubagentStop`, and `PostToolUse` close/resume hooks:
+
+```sh
+npx -y subagent-auto-manager@latest hook
+```
+
+After changing hooks, open `/hooks` in Codex and trust them.
+
+## Storage
+
+```text
+<project>/.codex/subagent_auto_manager.db/ledger.sqlite3
+```
+
+Hooks use `session_id`. CLI defaults to `CODEX_THREAD_ID`.
