@@ -61,7 +61,7 @@ Add this to Codex hooks config, for example project `.codex/hooks.json`:
 }
 ```
 
-The command reads Codex JSON from stdin and writes `{}` to stdout so Codex can continue normally. `SubagentStart` and `SubagentStop` payloads are stored in full. `PostToolUse` tracks `close_agent` and `resume_agent`, including Codex multi-agent v1 names such as `multi_agent_v1close_agent`, `multi_agent_v1__close_agent`, or `multi_agent_v1.close_agent`, which are the available signal for whether the parent closed or reopened a subagent thread.
+The command reads Codex JSON from stdin and writes `{}` to stdout so Codex can continue normally. `SubagentStart` and `SubagentStop` payloads are stored in full. The hook also records the hook process parent PID; if a later `SubagentStart` for the same `session_id` is launched by a different parent PID, prior running runs for that session are treated as stale after a shutdown and automatically marked `stopped`. `PostToolUse` tracks `close_agent` and `resume_agent`, including Codex multi-agent v1 names such as `multi_agent_v1close_agent`, `multi_agent_v1__close_agent`, or `multi_agent_v1.close_agent`, which are the available signal for whether the parent closed or reopened a subagent thread.
 
 For a global install, put the same `hooks` block in `~/.codex/hooks.json`. On Windows this is typically:
 
@@ -199,7 +199,7 @@ Each project stores its ledger below:
 
 The CLI isolates sessions with `CODEX_THREAD_ID` by default. Hooks use the `session_id` from the Codex hook JSON.
 
-The database stores queryable columns for common Codex hook fields such as `session_id`, `turn_id`, `agent_id`, `agent_type`, `cwd`, `model`, `permission_mode`, `transcript_path`, `agent_transcript_path`, `prompt`, `last_assistant_message`, `start_args_json`, `stop_hook_active`, `tool_name`, `tool_use_id`, and `close_target`, plus the complete raw payload JSON for every event. `start_args_json` is a compact JSON snapshot derived from `SubagentStart`: it keeps launch parameters such as agent type, model, reasoning effort, sandbox or approval settings, fork flags, custom fields, and prompt, while excluding lifecycle metadata such as hook event name, session id, turn id, and transcript paths.
+The database stores queryable columns for common Codex hook fields such as `session_id`, `hook_parent_pid`, `turn_id`, `agent_id`, `agent_type`, `cwd`, `model`, `permission_mode`, `transcript_path`, `agent_transcript_path`, `prompt`, `last_assistant_message`, `start_args_json`, `stop_hook_active`, `tool_name`, `tool_use_id`, and `close_target`, plus the complete raw payload JSON for every event. `start_args_json` is a compact JSON snapshot derived from `SubagentStart`: it keeps launch parameters such as agent type, model, reasoning effort, sandbox or approval settings, fork flags, custom fields, and prompt, while excluding lifecycle metadata such as hook event name, session id, turn id, and transcript paths.
 
 ## Publishing
 

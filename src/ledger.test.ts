@@ -462,6 +462,65 @@ test("keeps sessions isolated in the same project database", () => {
   }
 });
 
+test("auto-stops prior running subagents when hook parent pid changes in the same session", () => {
+  const root = tempRoot();
+  const ledger = SubagentLedger.open(root);
+
+  try {
+    ledger.record({
+      eventName: "SubagentStart",
+      sessionId: "session-shutdown",
+      projectRoot: root,
+      hookParentPid: 100,
+      payload: {
+        hook_event_name: "SubagentStart",
+        session_id: "session-shutdown",
+        agent_id: "agent-before-shutdown",
+        agent_type: "explorer",
+        cwd: root,
+        prompt: "old parent"
+      }
+    });
+
+    assert.equal(ledger.summary("session-shutdown").running, 1);
+
+    ledger.record({
+      eventName: "SubagentStart",
+      sessionId: "session-shutdown",
+      projectRoot: root,
+      hookParentPid: 200,
+      payload: {
+        hook_event_name: "SubagentStart",
+        session_id: "session-shutdown",
+        agent_id: "agent-after-shutdown",
+        agent_type: "explorer",
+        cwd: root,
+        prompt: "new parent"
+      }
+    });
+
+    assert.deepEqual(ledger.summary("session-shutdown"), {
+      sessionId: "session-shutdown",
+      running: 1,
+      stopped: 1,
+      closed: 0,
+      total: 2
+    });
+
+    const runs = ledger.listSession("session-shutdown");
+    const previous = runs.find((run) => run.agentId === "agent-before-shutdown");
+    const current = runs.find((run) => run.agentId === "agent-after-shutdown");
+    assert.equal(previous?.status, "stopped");
+    assert.equal(previous?.hookParentPid, 100);
+    assert.notEqual(previous?.stopTime, null);
+    assert.equal(current?.status, "running");
+    assert.equal(current?.hookParentPid, 200);
+  } finally {
+    ledger.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("stores database below .codex/subagent_auto_manager.db", () => {
   const root = tempRoot();
   const ledger = SubagentLedger.open(root);

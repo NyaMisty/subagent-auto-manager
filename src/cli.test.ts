@@ -217,6 +217,28 @@ test("filters stopped agents explicitly", async () => {
   }
 });
 
+test("CLI running output excludes stale runs auto-stopped after hook parent pid changes", async () => {
+  const root = tempRoot();
+  seedRun(root, "session-parent-pid", "running", "agent-stale", 100);
+  seedRun(root, "session-parent-pid", "running", "agent-current", 200);
+  const result = runCli(["--cwd", root, "--running"], { CODEX_THREAD_ID: "session-parent-pid" });
+
+  try {
+    const parsed = JSON.parse(result.stdout);
+    assert.equal(parsed.summary.running, 1);
+    assert.equal(parsed.summary.stopped, 1);
+    assert.equal(parsed.summary.total, 2);
+    assert.deepEqual(parsed.runs, [
+      {
+        agentId: "agent-current",
+        state: "running"
+      }
+    ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("filters closed agents, closes stopped runs by reset, and clears one closed mark with human override", async () => {
   const root = tempRoot();
   seedRun(root, "session-closed", "stopped", "agent-closed");
@@ -561,13 +583,20 @@ function setRunStartTime(root: string, runKey: string, startTime: string): void 
   }
 }
 
-function seedRun(root: string, sessionId: string, status: "running" | "stopped" = "stopped", agentId = "agent-1"): void {
+function seedRun(
+  root: string,
+  sessionId: string,
+  status: "running" | "stopped" = "stopped",
+  agentId = "agent-1",
+  hookParentPid?: number
+): void {
   const ledger = SubagentLedger.open(root);
   try {
     ledger.record({
       eventName: "SubagentStart",
       sessionId,
       projectRoot: root,
+      hookParentPid,
       payload: {
         hook_event_name: "SubagentStart",
         session_id: sessionId,
@@ -591,6 +620,7 @@ function seedRun(root: string, sessionId: string, status: "running" | "stopped" 
         eventName: "SubagentStop",
         sessionId,
         projectRoot: root,
+        hookParentPid,
         payload: {
           hook_event_name: "SubagentStop",
           session_id: sessionId,

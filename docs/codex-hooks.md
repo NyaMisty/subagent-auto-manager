@@ -12,6 +12,8 @@ The event name is read from `hook_event_name`.
 
 `PostToolUse` is used only for subagent thread state tracking. A successful `close_agent` call marks the target agent as `closed`; a successful `resume_agent` call clears that mark.
 
+The hook records the hook process parent PID in `hook_parent_pid`. When a later `SubagentStart` for the same `session_id` comes from a different parent PID, older running runs for that session are treated as stale after a parent shutdown and automatically marked `stopped`.
+
 ## Hook Configuration
 
 Recommended command:
@@ -149,6 +151,7 @@ Example `hooks.json`:
 Known fields are copied to queryable columns:
 
 - `session_id`
+- `hook_parent_pid`
 - `turn_id`
 - `agent_id`
 - `agent_type`

@@ -4,6 +4,8 @@
 
 `subagent-auto-manager` records Codex subagent lifecycle hook payloads into a project-local SQLite ledger and exposes compact, medium, or full detail JSON/YAML CLI views by session. It also records state-changing `PostToolUse` calls for `close_agent` and `resume_agent` so closed thread state can be tracked separately from subagent turn completion. Unrelated `PostToolUse` calls are ignored.
 
+The hook records its parent PID. If a new `SubagentStart` for the same session comes from a different parent PID, prior running rows for that session are considered stale after parent shutdown and are automatically marked `stopped`.
+
 ## Package Shape
 
 - `src/cli.ts`: CLI argument parsing and commands.
@@ -30,6 +32,7 @@ The database stores:
 - one row per hook payload in `subagent_events`
 - one reconstructed run per subagent in `subagent_runs`
 - explicit columns for common Codex fields
+- `hook_parent_pid`, used to detect parent shutdown/restart for a session
 - `start_args_json`, a compact launch-argument snapshot derived from `SubagentStart`
 - `closed`, `close_event_id`, `close_time`, and raw close payload fields for thread-close state
 - the complete compact raw payload JSON
@@ -37,6 +40,8 @@ The database stores:
 ## Session Isolation
 
 Hooks use the `session_id` field provided by Codex in the hook JSON.
+
+For hook-created starts, `hook_parent_pid` stores `process.ppid`. A PID change within the same `session_id` means the previous parent process has shut down, so old running runs are stopped before the new start is recorded.
 
 The CLI defaults to `CODEX_THREAD_ID`, running-only filtering, and pretty JSON. With no list/filter arguments it hides `runs` and returns summary only. With list/filter arguments it defaults to compact runs containing only `agentId` and `state`. It also accepts:
 

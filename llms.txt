@@ -61,7 +61,7 @@ Filtered output returns only:
 
 `running`: `SubagentStart` seen; no `SubagentStop`; not closed.
 
-`stopped`: `SubagentStop` seen. The subagent turn ended. The thread may still be open.
+`stopped`: `SubagentStop` seen, or a later `SubagentStart` for the same `session_id` came from a different hook parent PID after parent shutdown. The subagent turn ended or was made stale. The thread may still be open.
 
 `closed`: successful Codex built-in `close_agent` was seen. `resume_agent` clears this mark.
 
@@ -70,6 +70,7 @@ Filtered output returns only:
 ```text
 spawn_agent       -> SubagentStart             -> running
 subagent finishes -> SubagentStop              -> stopped
+parent restart    -> SubagentStart parent PID change -> stale running agents become stopped
 close_agent       -> PostToolUse close_agent   -> closed
 resume_agent      -> PostToolUse resume_agent  -> clears closed
 ```
@@ -136,4 +137,4 @@ After changing hooks, open `/hooks` in Codex and trust them.
 <project>/.codex/subagent_auto_manager.db/ledger.sqlite3
 ```
 
-Hooks use `session_id`. CLI defaults to `CODEX_THREAD_ID`.
+Hooks use `session_id` and record the hook parent PID. CLI defaults to `CODEX_THREAD_ID`.

@@ -15,7 +15,7 @@ export async function runHook(): Promise<void> {
   const ledger = SubagentLedger.open(projectRoot);
 
   try {
-    ledger.record({ eventName, sessionId, projectRoot, payload });
+    ledger.record({ eventName, sessionId, projectRoot, payload, hookParentPid: process.ppid });
   } finally {
     ledger.close();
   }

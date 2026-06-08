@@ -23,6 +23,7 @@ interface EventRow {
   agent_type: string | null;
   permission_mode: string | null;
   model: string | null;
+  hook_parent_pid: number | null;
   cwd: string | null;
   transcript_path: string | null;
   agent_transcript_path: string | null;
@@ -43,6 +44,7 @@ interface RunRow {
   agent_id: string | null;
   agent_type: string | null;
   session_id: string;
+  hook_parent_pid: number | null;
   turn_id: string | null;
   permission_mode: string | null;
   model: string | null;
@@ -79,6 +81,7 @@ export interface LedgerRecordInput {
   sessionId: string;
   projectRoot: string;
   payload: HookInput;
+  hookParentPid?: number | null;
 }
 
 export interface LedgerRecordResult {
@@ -120,6 +123,7 @@ export class SubagentLedger {
     const now = new Date().toISOString();
     const payloadJson = compactJson(input.payload);
     const fields = extractFields(input.payload, input.projectRoot, input.eventName);
+    const hookParentPid = normalizePid(input.hookParentPid);
     const toolStateChange = toolStateChangeFromPayload(input.eventName, input.payload);
     if (input.eventName === "PostToolUse" && !toolStateChange) {
       return {
@@ -132,9 +136,14 @@ export class SubagentLedger {
     const runKey = this.resolveRunKey(input.eventName, input.sessionId, fields, payloadJson, toolStateChange);
     const subagentId = fields.agentId ?? toolStateChange?.target ?? runKey;
 
+    if (input.eventName === "SubagentStart") {
+      this.stopRunningIfParentChanged(input.sessionId, hookParentPid, now);
+    }
+
     const eventId = this.insertEvent({
       eventName: input.eventName,
       sessionId: input.sessionId,
+      hookParentPid,
       runKey,
       subagentId,
       fields,
@@ -147,6 +156,7 @@ export class SubagentLedger {
       this.upsertStart({
         runKey,
         sessionId: input.sessionId,
+        hookParentPid,
         subagentId,
         fields,
         startEventId: eventId,
@@ -157,6 +167,7 @@ export class SubagentLedger {
       this.applyStop({
         runKey,
         sessionId: input.sessionId,
+        hookParentPid,
         subagentId,
         fields,
         stopEventId: eventId,
@@ -242,6 +253,7 @@ export class SubagentLedger {
         `SELECT run_key, subagent_id, agent_id, agent_type, session_id, turn_id, permission_mode, model, cwd,
                 transcript_path, agent_transcript_path, start_event_id, stop_event_id, start_time, stop_time,
                 status, closed, close_event_id, close_time, duration_ms, prompt, last_assistant_message,
+                hook_parent_pid,
                 start_args_json,
                 start_payload, stop_payload, close_payload
            FROM subagent_runs
@@ -280,7 +292,7 @@ export class SubagentLedger {
       .prepare(
         `SELECT id, event_name, session_id, turn_id, subagent_id, agent_id, agent_type, permission_mode,
                 model, cwd, transcript_path, agent_transcript_path, prompt, last_assistant_message,
-                start_args_json,
+                hook_parent_pid, start_args_json,
                 stop_hook_active, tool_name, tool_use_id, close_target, payload_json, created_at
            FROM subagent_events
           WHERE session_id = ?
@@ -337,6 +349,7 @@ export class SubagentLedger {
   private insertEvent(values: {
     eventName: string;
     sessionId: string;
+    hookParentPid: number | null;
     runKey: string;
     subagentId: string;
     fields: ExtractedFields;
@@ -348,9 +361,9 @@ export class SubagentLedger {
       .prepare(
         `INSERT INTO subagent_events
           (event_name, session_id, turn_id, run_key, subagent_id, agent_id, agent_type, permission_mode,
-           model, cwd, transcript_path, agent_transcript_path, prompt, last_assistant_message,
+           model, hook_parent_pid, cwd, transcript_path, agent_transcript_path, prompt, last_assistant_message,
            start_args_json, stop_hook_active, tool_name, tool_use_id, close_target, payload_json, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         values.eventName,
@@ -362,6 +375,7 @@ export class SubagentLedger {
         values.fields.agentType,
         values.fields.permissionMode,
         values.fields.model,
+        values.hookParentPid,
         values.fields.cwd,
         values.fields.transcriptPath,
         values.fields.agentTranscriptPath,
@@ -382,6 +396,7 @@ export class SubagentLedger {
   private upsertStart(values: {
     runKey: string;
     sessionId: string;
+    hookParentPid: number | null;
     subagentId: string;
     fields: ExtractedFields;
     startEventId: number;
@@ -391,15 +406,16 @@ export class SubagentLedger {
     this.db
       .prepare(
         `INSERT INTO subagent_runs
-          (run_key, subagent_id, agent_id, agent_type, session_id, turn_id, permission_mode, model, cwd,
+          (run_key, subagent_id, agent_id, agent_type, session_id, hook_parent_pid, turn_id, permission_mode, model, cwd,
            transcript_path, agent_transcript_path, start_event_id, start_time, status, prompt,
            last_assistant_message, start_args_json, start_payload, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?)
          ON CONFLICT(run_key) DO UPDATE SET
            subagent_id = excluded.subagent_id,
            agent_id = excluded.agent_id,
            agent_type = excluded.agent_type,
            session_id = excluded.session_id,
+           hook_parent_pid = excluded.hook_parent_pid,
            turn_id = excluded.turn_id,
            permission_mode = excluded.permission_mode,
            model = excluded.model,
@@ -429,6 +445,7 @@ export class SubagentLedger {
         values.fields.agentId,
         values.fields.agentType,
         values.sessionId,
+        values.hookParentPid,
         values.fields.turnId,
         values.fields.permissionMode,
         values.fields.model,
@@ -448,6 +465,7 @@ export class SubagentLedger {
   private applyStop(values: {
     runKey: string;
     sessionId: string;
+    hookParentPid: number | null;
     subagentId: string;
     fields: ExtractedFields;
     stopEventId: number;
@@ -463,11 +481,12 @@ export class SubagentLedger {
     this.db
       .prepare(
         `INSERT INTO subagent_runs
-          (run_key, subagent_id, agent_id, agent_type, session_id, turn_id, permission_mode, model, cwd,
+          (run_key, subagent_id, agent_id, agent_type, session_id, hook_parent_pid, turn_id, permission_mode, model, cwd,
            transcript_path, agent_transcript_path, start_event_id, stop_event_id, start_time, stop_time,
            status, duration_ms, prompt, last_assistant_message, start_args_json, start_payload, stop_payload, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'stopped', ?, NULL, ?, NULL, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'stopped', ?, NULL, ?, NULL, ?, ?, ?)
          ON CONFLICT(run_key) DO UPDATE SET
+           hook_parent_pid = COALESCE(subagent_runs.hook_parent_pid, excluded.hook_parent_pid),
            stop_event_id = excluded.stop_event_id,
            stop_time = excluded.stop_time,
            status = 'stopped',
@@ -482,6 +501,7 @@ export class SubagentLedger {
         values.fields.agentId,
         values.fields.agentType,
         values.sessionId,
+        values.hookParentPid,
         values.fields.turnId,
         values.fields.permissionMode,
         values.fields.model,
@@ -572,6 +592,7 @@ export class SubagentLedger {
         agent_type TEXT,
         permission_mode TEXT,
         model TEXT,
+        hook_parent_pid INTEGER,
         cwd TEXT,
         transcript_path TEXT,
         agent_transcript_path TEXT,
@@ -592,6 +613,7 @@ export class SubagentLedger {
         agent_id TEXT,
         agent_type TEXT,
         session_id TEXT NOT NULL,
+        hook_parent_pid INTEGER,
         turn_id TEXT,
         permission_mode TEXT,
         model TEXT,
@@ -633,11 +655,13 @@ export class SubagentLedger {
     this.addColumnIfMissing("subagent_events", "tool_use_id", "tool_use_id TEXT");
     this.addColumnIfMissing("subagent_events", "close_target", "close_target TEXT");
     this.addColumnIfMissing("subagent_events", "start_args_json", "start_args_json TEXT");
+    this.addColumnIfMissing("subagent_events", "hook_parent_pid", "hook_parent_pid INTEGER");
     this.addColumnIfMissing("subagent_runs", "closed", "closed INTEGER NOT NULL DEFAULT 0");
     this.addColumnIfMissing("subagent_runs", "close_event_id", "close_event_id INTEGER");
     this.addColumnIfMissing("subagent_runs", "close_time", "close_time TEXT");
     this.addColumnIfMissing("subagent_runs", "close_payload", "close_payload TEXT");
     this.addColumnIfMissing("subagent_runs", "start_args_json", "start_args_json TEXT");
+    this.addColumnIfMissing("subagent_runs", "hook_parent_pid", "hook_parent_pid INTEGER");
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_subagent_runs_session_closed
         ON subagent_runs(session_id, closed, close_time);
@@ -651,6 +675,42 @@ export class SubagentLedger {
     }
 
     this.db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${definition}`);
+  }
+
+  private stopRunningIfParentChanged(sessionId: string, hookParentPid: number | null, stopTime: string): void {
+    if (hookParentPid === null) {
+      return;
+    }
+
+    const existing = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count
+           FROM subagent_runs
+          WHERE session_id = ?
+            AND status = 'running'
+            AND hook_parent_pid IS NOT NULL
+            AND hook_parent_pid <> ?`
+      )
+      .get(sessionId, hookParentPid) as { count: number };
+
+    if (Number(existing.count) === 0) {
+      return;
+    }
+
+    this.db
+      .prepare(
+        `UPDATE subagent_runs
+            SET status = 'stopped',
+                stop_time = ?,
+                duration_ms = MAX(0, CAST((julianday(?) - julianday(start_time)) * 86400000 AS INTEGER)),
+                stop_payload = COALESCE(stop_payload, start_payload),
+                updated_at = ?
+          WHERE session_id = ?
+            AND status = 'running'
+            AND hook_parent_pid IS NOT NULL
+            AND hook_parent_pid <> ?`
+      )
+      .run(stopTime, stopTime, stopTime, sessionId, hookParentPid);
   }
 }
 
@@ -715,6 +775,14 @@ function firstString(payload: Record<string, unknown>, keys: string[]): string |
 
 function stringOrNull(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function normalizePid(value: number | null | undefined): number | null {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+    return null;
+  }
+
+  return value;
 }
 
 type ToolStateChange = {
@@ -856,6 +924,7 @@ function mapRun(row: RunRow): SubagentRun {
     agentId: row.agent_id,
     agentType: row.agent_type,
     sessionId: row.session_id,
+    hookParentPid: row.hook_parent_pid === null ? null : Number(row.hook_parent_pid),
     turnId: row.turn_id,
     permissionMode: row.permission_mode,
     model: row.model,

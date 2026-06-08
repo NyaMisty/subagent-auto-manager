@@ -41,6 +41,7 @@ function run(overrides: Partial<SubagentRun>): SubagentRun {
     agentId: overrides.agentId ?? "agent",
     agentType: "general",
     sessionId: "session",
+    hookParentPid: null,
     turnId: "turn",
     permissionMode: "default",
     model: "gpt-5",

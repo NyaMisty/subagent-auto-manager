@@ -133,6 +133,7 @@ function run(): SubagentRun {
     agentId: "agent-1",
     agentType: "explorer",
     sessionId: "session-a",
+    hookParentPid: 12345,
     turnId: "turn-1",
     permissionMode: "bypassPermissions",
     model: "gpt-5.5",
