@@ -208,6 +208,14 @@ Compact text output is also available with `--text`. Text output prints full ses
 
 Hints are written to stderr. They summarize the active filter/format/detail settings and suggest useful next commands, while stdout remains parseable JSON/YAML/text.
 
+For human diagnostics of stale-run PID detection, use `debug --human`:
+
+```sh
+npx -y subagent-auto-manager@latest debug --human --text
+```
+
+The report includes `CODEX_PID`, current `pid`/`ppid`, recursive process lineage, Codex process matches, resolved `hook_session_pid`, session summary, recent ledger rows, and grouped ledger `hook_parent_pid` / `hook_session_pid` values.
+
 ## Storage
 
 Each project stores its ledger below:

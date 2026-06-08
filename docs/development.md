@@ -56,6 +56,7 @@ npx -y subagent-auto-manager@latest reset --session <session-id> --cwd <project>
 npx -y subagent-auto-manager@latest reset --session <session-id> --cwd <project> --full --human
 npx -y subagent-auto-manager@latest reset --session <session-id> --cwd <project> --agent <agent-id> --human
 npx -y subagent-auto-manager@latest wait --session <session-id> --cwd <project> --agent <agent-a> --agent <agent-b> --timeout-ms 600000
+npx -y subagent-auto-manager@latest debug --session <session-id> --cwd <project> --human --text
 ```
 
 `--status all`, `--status closed`, `--all`, `--closed`, `list`, and `--after-timestamp` are broad manual-debugging list queries and require `--human`. `--after-timestamp` uses a Unix timestamp in seconds, filters runs by `startTime`, and lists all statuses after that timestamp.
@@ -64,11 +65,14 @@ npx -y subagent-auto-manager@latest wait --session <session-id> --cwd <project> 
 
 `wait` streams each newly stopped agent id to stderr during polling and keeps stdout for the final result document. On timeout, it exits with code 1 and reports targets that did not emit `SubagentStop`; JSON/YAML output includes these rows in `incompleteTargets`, text output prints `Pending` for targets that started but have not returned yet and `Miss` for targets with no matching ledger row, and stderr receives one `[subagent-auto-manager] wait timeout ...` line for each incomplete target.
 
+`debug --human` prints a diagnostics report for stale-run PID detection. It includes `CODEX_PID`, current `pid`/`ppid`, recursive process lineage, Codex process matches, resolved `hook_session_pid`, session summary, recent ledger rows, and grouped ledger `hook_parent_pid` / `hook_session_pid` values.
+
 ## Verification
 
 Run local checks:
 
 ```sh
+npm run typecheck
 npm test
 npm pack --dry-run
 ```

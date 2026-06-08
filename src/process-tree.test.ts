@@ -56,21 +56,31 @@ test("finds the nearest Codex ancestor in a hook wrapper lineage", () => {
 });
 
 test("prefers CODEX_PID over recursive process lineage lookup", () => {
-  assert.equal(
+  assert.deepEqual(
     resolveCodexSessionPid(
       [{ pid: 100, parentPid: 50, name: "codex.exe", commandLine: "codex" }],
       { CODEX_PID: "9000" }
     ),
-    9000
+    {
+      hookSessionPid: 9000,
+      source: "CODEX_PID",
+      envCodexPid: 9000,
+      recursiveCodexPid: 100
+    }
   );
 });
 
 test("falls back to recursive Codex ancestor lookup when CODEX_PID is invalid", () => {
-  assert.equal(
+  assert.deepEqual(
     resolveCodexSessionPid(
       [{ pid: 100, parentPid: 50, name: "codex.exe", commandLine: "codex" }],
       { CODEX_PID: "not-a-pid" }
     ),
-    100
+    {
+      hookSessionPid: 100,
+      source: "ppid-chain",
+      envCodexPid: null,
+      recursiveCodexPid: 100
+    }
   );
 });

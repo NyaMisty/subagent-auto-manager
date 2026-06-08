@@ -181,6 +181,14 @@ List output exposes `stopReason` for stopped and closed rows when available. `ho
 
 Rows stopped with `pid-change` are stale markers, not raw `SubagentStop` records. They have `stop_time` and `stopReason: "pid-change"`, but no `stop_event_id` or `stop_payload`.
 
+For human diagnostics of PID detection, run:
+
+```sh
+npx -y subagent-auto-manager@latest debug --human --text
+```
+
+The report includes `CODEX_PID`, current `pid`/`ppid`, recursive process lineage, Codex process matches, resolved `hook_session_pid`, session summary, recent ledger rows, and grouped ledger `hook_parent_pid` / `hook_session_pid` values.
+
 Closed state is inferred from `PostToolUse`. Configure `PostToolUse` with `(close_agent|resume_agent)$` so Codex forwards bare names and namespaced tool-name variants.
 
 - `close_agent` with `tool_input.target` and a successful response marks that target `closed`.

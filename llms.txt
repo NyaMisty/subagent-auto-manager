@@ -1,18 +1,20 @@
-# subagent-auto-manager TLDR
+# subagent-auto-manager LLM Guide
 
-Only use this as a small supplement to Codex built-in agent tools.
+This package is a Codex hook plus CLI utility backed by SQLite. Use it only as a small supplement to Codex built-in agent tools.
 
 Use it to check counts, states, and agent ids. Do not use it to replace `spawn_agent`, `wait_agent`, `resume_agent`, `close_agent`, or result gathering.
 
 Minimize tool calls. Keep output small. Prefer counts first, then narrow id lists. Avoid broad/history/detail queries unless a human is debugging.
 
-## One Scenario: Many Agents In Waves
+Do not include human-only debug commands in this file.
+
+## Normal Workflow
 
 ```sh
 # 1. Quick counts only. No runs.
 npx -y subagent-auto-manager@latest
 
-# 2. Launch many agents with Codex built-in spawn_agent.
+# 2. Launch agents with Codex built-in spawn_agent.
 
 # 3. Wait for every current running, not-closed agent.
 npx -y subagent-auto-manager@latest wait --timeout-ms 600000 --text
@@ -25,9 +27,12 @@ npx -y subagent-auto-manager@latest --status stopped
 npx -y subagent-auto-manager@latest --agent <agent-id>
 
 # 5. Gather each stopped agent with Codex built-in tools, then close_agent when done.
+
+# 6. After gather/close workflow, bulk-hide completed stopped agents.
+npx -y subagent-auto-manager@latest reset
 ```
 
-Default no-arg output:
+Default no-arg output is summary JSON only, with no `runs` property:
 
 ```json
 {
@@ -41,7 +46,7 @@ Default no-arg output:
 }
 ```
 
-Filtered output returns only:
+Filtered output defaults to compact run rows:
 
 ```json
 {
@@ -59,81 +64,15 @@ Filtered output returns only:
 }
 ```
 
-## States
+## Hook Logic
 
-`running`: `SubagentStart` seen; no `SubagentStop`; not closed.
-
-`stopped`: `SubagentStop` seen, or a later `SubagentStart` for the same `session_id` came from a different identified Codex session process after parent shutdown. The subagent turn ended or was made stale. The thread may still be open.
-
-`closed`: successful Codex built-in `close_agent` was seen. `resume_agent` clears this mark.
-
-Text labels:
-
-`Pending`: the target has a ledger row from `SubagentStart`, but no `SubagentStop` has been recorded yet; it started and has not returned.
-
-`Stopped`: the target has emitted `SubagentStop`, or was marked stale after parent restart.
-
-`stopReason`: `hook` means `SubagentStop` was recorded. `pid-change` means the row was auto-marked stopped because a later start for the same session came from a different identified Codex session process.
-
-`Miss`: a requested wait target did not match any ledger row; there is no recorded start for that target in this session/project ledger.
-
-`Closed`: the parent thread was closed through `close_agent`; this is separate from `Stopped`.
-
-## Built-In Tool Mapping
-
-```text
-spawn_agent       -> SubagentStart             -> running
-subagent finishes -> SubagentStop              -> stopped
-parent restart    -> SubagentStart Codex session process change -> stale running agents become stopped
-close_agent       -> PostToolUse close_agent   -> closed
-resume_agent      -> PostToolUse resume_agent  -> clears closed
-```
-
-PostToolUse tool names accepted:
-
-```text
-close_agent
-resume_agent
-multi_agent_v1close_agent
-multi_agent_v1resume_agent
-multi_agent_v1__close_agent
-multi_agent_v1.resume_agent
-```
-
-Do not generalize to `multi_agent_v2...` or `multi_agent_v10...`.
-
-Codex built-in multi-target `wait_agent` may return when any target completes. This package's `wait` is wait-all:
-
-```sh
-npx -y subagent-auto-manager@latest wait --timeout-ms 600000 --text
-npx -y subagent-auto-manager@latest wait --agent <agent-a> --agent <agent-b> --timeout-ms 600000 --text
-```
-
-During wait, stopped agents stream to stderr. Final result stays on stdout. On timeout, exit code is 1; stdout uses `Pending` for started targets that have not returned and `Miss` for targets with no matching ledger row. Stderr emits one `[subagent-auto-manager] wait timeout ...` line per incomplete target.
-
-## Reset
-
-```sh
-# After gather/close workflow, bulk-hide completed stopped agents.
-npx -y subagent-auto-manager@latest reset
-
-```
-
-Default `reset`: `stopped -> closed`.
-
-Full reset and clearing one closed mark are human-only operations; do not include those commands in this TLDR.
-
-## Avoid
-
-Do not ask for all states, closed-only lists, historical lists, or full payloads during normal agent work. These create large output and are for human debugging only.
-
-## Hook Setup
-
-Use this command for `SubagentStart`, `SubagentStop`, and `PostToolUse` close/resume hooks:
+Hook command:
 
 ```sh
 npx -y subagent-auto-manager@latest hook
 ```
+
+Use this command for `SubagentStart`, `SubagentStop`, and `PostToolUse` close/resume hooks. After changing hooks, open `/hooks` in Codex and trust them.
 
 PostToolUse matcher:
 
@@ -141,12 +80,303 @@ PostToolUse matcher:
 (close_agent|resume_agent)$
 ```
 
-After changing hooks, open `/hooks` in Codex and trust them.
+The hook reads JSON from stdin, validates `hook_event_name`, requires `session_id`, resolves the project root from payload `cwd` or current working directory, records process identity, writes the ledger update, then prints `{}` to stdout.
+
+Supported hook events:
+
+```text
+SubagentStart
+SubagentStop
+PostToolUse
+```
+
+Unsupported events fail the hook command. Unrelated `PostToolUse` payloads are ignored and are not written to the events table.
 
 ## Storage
+
+Database path:
 
 ```text
 <project>/.codex/subagent_auto_manager.db/ledger.sqlite3
 ```
 
-Hooks use `session_id`, record the hook parent PID for diagnostics, and use `CODEX_PID` or a recursively discovered Codex ancestor process PID for stale-run detection. CLI defaults to `CODEX_THREAD_ID`.
+SQLite uses WAL mode and two main tables:
+
+```text
+subagent_events: append-only rows for recorded supported hook events
+subagent_runs: current derived row per run_key
+```
+
+The ledger stores compact raw JSON payloads plus extracted recall fields: ids, type, model, cwd, transcript paths, prompt, last assistant message, permission mode, turn id, tool name, tool call id, close target, hook parent PID, and Codex session PID.
+
+`SubagentStart` also stores `startArgs`, which is the start payload minus `hook_event_name`, `session_id`, `turn_id`, `transcript_path`, and `agent_transcript_path`.
+
+## Run Identity
+
+`run_key` selection:
+
+```text
+close/resume PostToolUse target -> <session_id>:<target>
+known agent id                 -> <session_id>:<agent_id>
+SubagentStop without agent id  -> latest running row in the session matching transcript_path, if any
+fallback                       -> <session_id>:unknown:<16-char sha256 digest>
+```
+
+Known agent id fields are checked in this order:
+
+```text
+agent_id
+subagent_id
+agentId
+subagentId
+run_id
+runId
+```
+
+`agent_type` / `agentType`, `turn_id` / `turnId`, `permission_mode` / `permissionMode`, transcript path variants, and last assistant message variants are also normalized.
+
+## State Model
+
+The internal run state is `status` plus `closed`:
+
+```text
+status: running | stopped
+closed: boolean
+public state: closed if closed, otherwise status
+```
+
+Meanings:
+
+```text
+running: SubagentStart seen; no SubagentStop; not closed.
+stopped: SubagentStop seen, or marked stale after Codex session process change; not closed.
+closed: public closed mark is set. close_agent means the parent thread closed; reset only bulk-hides rows after gather/close. resume_agent clears the target's closed mark.
+```
+
+`SubagentStop` means subagent execution ended. Real closed thread state is separate and comes from `PostToolUse` for `close_agent` / `resume_agent`; reset is a local ledger cleanup mark.
+
+`stopReason` is derived:
+
+```text
+hook: stopped with a real SubagentStop event id.
+pid-change: stopped by stale-run detection after a later SubagentStart came from a different Codex session process.
+null: not stopped, or stopped without enough stop evidence.
+```
+
+Codex built-in multi-target `wait_agent` may return when any target completes. This package's `wait` is the wait-all helper and should keep returning success only after every requested target is `stopped`.
+
+## Close And Resume Tool Logic
+
+Only successful close/resume `PostToolUse` events affect `closed`.
+
+Accepted close/resume tool names include:
+
+```text
+close_agent
+resume_agent
+multi_agent_v1close_agent
+multi_agent_v1resume_agent
+multi_agent_v1__close_agent
+multi_agent_v1__resume_agent
+multi_agent_v1.close_agent
+multi_agent_v1.resume_agent
+```
+
+Do not generalize to `multi_agent_v2...` or `multi_agent_v10...`.
+
+Close target lookup:
+
+```text
+tool_input.target, then payload target
+```
+
+Resume target lookup:
+
+```text
+tool_input.id, then payload id
+```
+
+Tool response may be an object or a JSON string. The response must not have `isError` / `is_error` set. Close requires `previous_status`; resume requires `status`. The required status field may be direct or under `structuredContent` / `structured_content`. A `not_found` status is ignored.
+
+If close targets an unknown run, the ledger creates a stopped, closed placeholder row keyed by the target.
+
+## Stale-Run Detection
+
+On each `SubagentStart`, if the hook can identify the Codex session PID, any still-running rows in the same session with a different non-null Codex session PID are marked stopped. Their `stop_event_id` and `stop_payload` stay null, so public output shows `stopReason: "pid-change"`.
+
+The hook records:
+
+```text
+hook_parent_pid: direct hook parent process PID
+hook_session_pid: CODEX_PID if set, otherwise the first Codex ancestor process PID
+```
+
+A changed wrapper parent PID does not stop runs when the Codex session PID is unchanged.
+
+## CLI Logic
+
+Commands:
+
+```text
+running: default command, list current running agents or summary
+list: list all statuses, intended for manual debugging
+reset: hide completed stopped agents by marking them closed
+wait: poll until all targets are stopped
+hook: process one hook stdin payload
+help / --help / -h
+--version / -v
+```
+
+Defaults:
+
+```text
+session: --session, otherwise CODEX_THREAD_ID
+cwd: --cwd, otherwise current working directory
+output: JSON
+status filter: running
+wait timeout: 30000 ms
+wait poll interval: 1000 ms
+```
+
+Output formats:
+
+```text
+--json
+--yaml / --yml
+--text
+```
+
+Detail levels:
+
+```text
+summary: summary only; no runs property.
+compact: agentId, state, and stopReason when stopped.
+medium: compact plus type, prompt, times, duration, last assistant message, startArgs, model, cwd.
+full: all public run fields, parsed raw payloads, and full summary with sessionId.
+```
+
+Effective detail:
+
+```text
+no list/filter args -> summary
+list/filter args    -> compact
+explicit --medium   -> medium
+explicit --full     -> full
+```
+
+Normal listing can filter by:
+
+```text
+--running
+--stopped
+--status running
+--status stopped
+--agent <id>
+```
+
+`--agent` matches `agentId`, `subagentId`, `runKey`, or `<session_id>:<agent_id>`.
+
+Broad all-status listings, closed-only listings, full history windows, full reset, and clearing one closed mark are human-debug operations. Do not use them during normal agent work and do not add their commands to this file.
+
+The CLI writes a one-line diagnostic hint to stderr after list/running output. The primary machine-readable result stays on stdout.
+
+## Wait Logic
+
+Wait commands:
+
+```sh
+npx -y subagent-auto-manager@latest wait --timeout-ms 600000 --text
+npx -y subagent-auto-manager@latest wait --agent <agent-a> --agent <agent-b> --timeout-ms 600000 --text
+```
+
+Targets come from positional ids and `--agent` values. With no explicit targets, `wait` snapshots the current running, not-closed rows at the start. With `--all`, it adds the current running, not-closed rows to any explicit targets.
+
+A wait target matches:
+
+```text
+agentId
+subagentId
+runKey
+<session_id>:<target>
+```
+
+Target states:
+
+```text
+stopped: matched run has internal status stopped.
+running: matched run has internal status running.
+missing: no matching ledger row in this session/project ledger.
+```
+
+Wait completes successfully only when every target is `stopped` and none are `missing`. On timeout, exit code is 1. `running` and `missing` targets are incomplete.
+
+During polling, each newly stopped target is emitted once to stderr:
+
+```text
+[subagent-auto-manager] wait stopped agentId=<id> type=<agent_type>
+```
+
+On timeout, stderr emits one timeout line per incomplete target. Final JSON/YAML/text output stays on stdout.
+
+Text output labels:
+
+```text
+Pending: matched run is still running.
+Stopped: matched run is stopped.
+Miss: target did not match any run.
+Closed: list output label for public closed state; closed alone does not make wait complete.
+```
+
+On successful text wait, all targets are listed. On timeout text wait, only incomplete targets are listed on stdout.
+
+## Reset Logic
+
+Default `reset` marks stopped, not-closed rows in the current session as closed:
+
+```sh
+npx -y subagent-auto-manager@latest reset
+```
+
+This is intended after the parent gathered stopped agents and closed their threads with Codex built-in tools.
+
+Other reset modes are human-debug operations and are intentionally omitted here.
+
+## Output Shape Notes
+
+Summary counts always come from all rows in the selected session:
+
+```text
+running: status running and not closed
+stopped: status stopped and not closed
+closed: closed rows, regardless of internal status
+total: all rows in the session
+shown: rows returned by the current filter
+```
+
+Run ordering is:
+
+```text
+open rows before closed rows
+running before stopped
+newest start_time first
+```
+
+Text list output starts with:
+
+```text
+session <session_id> total=<n> running=<n> stopped=<n> closed=<n>
+```
+
+Then each run uses:
+
+```text
+Pending <agentId> <agentType> <elapsed> <prompt>
+Stopped <agentId> <agentType> <duration> stop=<reason>
+Closed <agentId> <agentType> <duration> stop=<reason>
+```
+
+Prompts are collapsed to one line and truncated in text output.
+
+## Avoid
+
+Do not ask for all states, closed-only lists, historical lists, full payloads, or human-debug reset modes during normal agent work. These create large output and are for human debugging only.

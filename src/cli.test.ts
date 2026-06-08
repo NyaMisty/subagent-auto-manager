@@ -199,6 +199,55 @@ test("supports optional full YAML list output", async () => {
   }
 });
 
+test("debug requires human override", async () => {
+  const result = runCli(["debug"], { CODEX_THREAD_ID: "session-debug" }, 1);
+
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /debug requires --human/);
+});
+
+test("debug prints process and ledger diagnostics", async () => {
+  const root = tempRoot();
+  seedRun(root, "session-debug", "running", "agent-debug", 100, 9000);
+  const result = runCli(["debug", "--cwd", root, "--human"], {
+    CODEX_THREAD_ID: "session-debug",
+    CODEX_PID: "12345"
+  });
+
+  try {
+    const parsed = JSON.parse(result.stdout);
+    assert.equal(parsed.command, "debug");
+    assert.equal(parsed.environment.CODEX_PID, "12345");
+    assert.equal(parsed.processIdentity.hookSessionPid, 12345);
+    assert.equal(parsed.processIdentity.hookSessionPidSource, "CODEX_PID");
+    assert.equal(Array.isArray(parsed.processLineage), true);
+    assert.equal(parsed.ledger.sessionId, "session-debug");
+    assert.equal(parsed.ledger.summary.running, 1);
+    assert.deepEqual(parsed.ledger.pidGroups.hookSessionPid, [{ pid: 9000, count: 1 }]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("debug rejects ignored list and detail options", async () => {
+  const root = tempRoot();
+
+  try {
+    for (const [args, pattern] of [
+      [["debug", "--human", "--status", "all", "--cwd", root], /debug does not support --status/],
+      [["debug", "--human", "--agent", "agent-debug", "--cwd", root], /debug does not support --agent/],
+      [["debug", "--human", "--full", "--cwd", root], /debug does not support --full/],
+      [["debug", "--human", "--timeout-ms", "1", "--cwd", root], /--timeout-ms is only supported by wait/]
+    ] as Array<[string[], RegExp]>) {
+      const result = runCli(args, { CODEX_THREAD_ID: "session-debug-options" }, 1);
+      assert.equal(result.stdout, "");
+      assert.match(result.stderr, pattern);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("filters stopped agents explicitly", async () => {
   const root = tempRoot();
   seedRun(root, "session-stopped", "running");
@@ -380,6 +429,9 @@ test("reset full mode only accepts reset --full order", async () => {
   const before = runCli(["--full", "reset", "--cwd", root, "--text"], {
     CODEX_THREAD_ID: "session-reset-full-order"
   }, 1);
+  const allBefore = runCli(["--all", "reset", "--cwd", root, "--text"], {
+    CODEX_THREAD_ID: "session-reset-full-order"
+  }, 1);
   const all = runCli(["reset", "--all", "--cwd", root, "--text"], {
     CODEX_THREAD_ID: "session-reset-full-order"
   }, 1);
@@ -389,9 +441,32 @@ test("reset full mode only accepts reset --full order", async () => {
 
   try {
     assert.match(before.stderr, /reset --full must be passed after reset/);
+    assert.match(allBefore.stderr, /reset full mode must use reset --full/);
     assert.match(all.stderr, /reset full mode must use reset --full/);
     assert.match(detail.stderr, /reset full mode must use reset --full/);
     assert.equal(JSON.parse(runCli(["--cwd", root], { CODEX_THREAD_ID: "session-reset-full-order" }).stdout).summary.running, 1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects command-specific options that would otherwise be ignored", async () => {
+  const root = tempRoot();
+
+  try {
+    for (const [args, pattern] of [
+      [["wait", "--status", "stopped", "--cwd", root], /wait does not support --status/],
+      [["--closed", "wait", "--cwd", root], /wait does not support --closed/],
+      [["--medium", "wait", "--cwd", root], /wait does not support --medium/],
+      [["--all-running", "--cwd", root], /--all-running is only supported by wait/],
+      [["--timeout-ms", "1", "--cwd", root], /--timeout-ms is only supported by wait/],
+      [["reset", "--stopped", "--cwd", root], /reset does not support --stopped/],
+      [["running", "wait", "--cwd", root], /only one command may be provided/]
+    ] as Array<[string[], RegExp]>) {
+      const result = runCli(args, { CODEX_THREAD_ID: "session-command-options" }, 1);
+      assert.equal(result.stdout, "");
+      assert.match(result.stderr, pattern);
+    }
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -635,10 +710,78 @@ test("wait snapshots current running agents when no targets are provided", async
   }
 });
 
+test("hook command through CLI prints empty JSON on invalid stdin", async () => {
+  const result = runCliWithInput(["hook"], "not-json", { CODEX_THREAD_ID: "session-hook-fail" }, 1);
+
+  assert.equal(result.stdout, "{}\n");
+  assert.match(result.stderr, /Unexpected token/);
+});
+
+test("hook command rejects CLI options that do not affect hook stdin", async () => {
+  for (const [args, pattern] of [
+    [["hook", "--session", "session-a"], /hook does not support --session/],
+    [["hook", "--cwd", "."], /hook does not support --cwd/],
+    [["hook", "--json"], /hook does not support output format options/],
+    [["hook", "--agent", "agent-a"], /hook does not support --agent/],
+    [["hook", "--timeout-ms", "1"], /--timeout-ms is only supported by wait/]
+  ] as Array<[string[], RegExp]>) {
+    const result = runCliWithInput(args, "{}", { CODEX_THREAD_ID: "session-hook-options" }, 1);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, pattern);
+  }
+});
+
+test("hook command through CLI records stdin and exposes it through query output", async () => {
+  const root = tempRoot();
+  const payload = {
+    hook_event_name: "SubagentStart",
+    session_id: "session-hook-cli",
+    agent_id: "agent-hook-cli",
+    agent_type: "explorer",
+    cwd: root,
+    prompt: "hook cli smoke"
+  };
+
+  try {
+    const hook = runCliWithInput(["hook"], JSON.stringify(payload), { CODEX_THREAD_ID: "session-hook-cli" });
+    const query = runCli(["--cwd", root, "--session", "session-hook-cli", "--agent", "agent-hook-cli"], {});
+
+    assert.equal(hook.stdout, "{}\n");
+    assert.equal(hook.stderr, "");
+    assert.deepEqual(JSON.parse(query.stdout).runs, [
+      {
+        agentId: "agent-hook-cli",
+        state: "running"
+      }
+    ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 function runCli(args: string[], env: NodeJS.ProcessEnv, expectedStatus = 0): { stdout: string; stderr: string } {
   const cliPath = join(dirname(fileURLToPath(import.meta.url)), "cli.js");
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     env: { ...process.env, ...env },
+    encoding: "utf8"
+  });
+  assert.equal(result.status, expectedStatus, result.stderr);
+  return {
+    stdout: result.stdout,
+    stderr: result.stderr
+  };
+}
+
+function runCliWithInput(
+  args: string[],
+  input: string,
+  env: NodeJS.ProcessEnv,
+  expectedStatus = 0
+): { stdout: string; stderr: string } {
+  const cliPath = join(dirname(fileURLToPath(import.meta.url)), "cli.js");
+  const result = spawnSync(process.execPath, [cliPath, ...args], {
+    env: { ...process.env, ...env },
+    input,
     encoding: "utf8"
   });
   assert.equal(result.status, expectedStatus, result.stderr);

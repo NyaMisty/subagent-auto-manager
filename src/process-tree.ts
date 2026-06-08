@@ -15,6 +15,15 @@ export interface HookProcessIdentity {
   hookAncestorPids: number[];
 }
 
+export type CodexSessionPidSource = "CODEX_PID" | "ppid-chain" | null;
+
+export interface CodexSessionPidResolution {
+  hookSessionPid: number | null;
+  source: CodexSessionPidSource;
+  envCodexPid: number | null;
+  recursiveCodexPid: number | null;
+}
+
 const MAX_DEPTH = 24;
 
 export function currentHookProcessIdentity(): HookProcessIdentity {
@@ -22,11 +31,11 @@ export function currentHookProcessIdentity(): HookProcessIdentity {
   const hookParentPid = normalizePid(lineage[0]?.parentPid) ?? normalizePid(process.ppid);
   const ancestors = lineage.slice(1);
   const hookAncestorPids = ancestors.map((ancestor) => ancestor.pid);
-  const hookSessionPid = resolveCodexSessionPid(ancestors);
+  const resolution = resolveCodexSessionPid(ancestors);
 
   return {
     hookParentPid,
-    hookSessionPid,
+    hookSessionPid: resolution.hookSessionPid,
     hookAncestorPids
   };
 }
@@ -58,8 +67,24 @@ export function findCodexAncestorPid(lineage: ProcessInfo[]): number | null {
   return null;
 }
 
-export function resolveCodexSessionPid(lineage: ProcessInfo[], env: NodeJS.ProcessEnv = process.env): number | null {
-  return normalizePid(env.CODEX_PID) ?? findCodexAncestorPid(lineage);
+export function resolveCodexSessionPid(lineage: ProcessInfo[], env: NodeJS.ProcessEnv = process.env): CodexSessionPidResolution {
+  const envCodexPid = normalizePid(env.CODEX_PID);
+  const recursiveCodexPid = findCodexAncestorPid(lineage);
+  if (envCodexPid !== null) {
+    return {
+      hookSessionPid: envCodexPid,
+      source: "CODEX_PID",
+      envCodexPid,
+      recursiveCodexPid
+    };
+  }
+
+  return {
+    hookSessionPid: recursiveCodexPid,
+    source: recursiveCodexPid === null ? null : "ppid-chain",
+    envCodexPid,
+    recursiveCodexPid
+  };
 }
 
 function collectWindowsProcessLineage(pid: number, maxDepth: number): ProcessInfo[] {

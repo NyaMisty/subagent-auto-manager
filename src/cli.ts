@@ -7,12 +7,13 @@ import { isDirectEntry } from "./runtime.js";
 import { sessionIdFromEnv } from "./session.js";
 import { formatSession } from "./format.js";
 import { buildOutput, type DetailLevel } from "./output.js";
+import { collectProcessLineage, isCodexProcess, resolveCodexSessionPid } from "./process-tree.js";
 import { publicRunState } from "./state.js";
 import { toYaml } from "./yaml.js";
 import type { SubagentRun } from "./types.js";
 
 interface CliOptions {
-  command: "list" | "running" | "reset" | "wait" | "hook" | "help" | "version";
+  command: "list" | "running" | "reset" | "wait" | "hook" | "debug" | "help" | "version";
   session?: string;
   cwd?: string;
   agent?: string;
@@ -22,10 +23,15 @@ interface CliOptions {
   timeoutMs: number;
   intervalMs: number;
   output: "json" | "yaml" | "text";
+  outputExplicit: boolean;
   detail: DetailLevel;
   detailExplicit: boolean;
   fullBeforeReset: boolean;
   hasListFilter: boolean;
+  allRequested: boolean;
+  listFilterArgs: string[];
+  detailArgs: string[];
+  waitOptionArgs: string[];
   status: "running" | "stopped" | "closed" | "all";
   afterTimestamp?: number;
   human: boolean;
@@ -60,6 +66,66 @@ interface WaitResult {
   targets: WaitTargetStatus[];
 }
 
+interface DebugProcessRow {
+  depth: number;
+  pid: number;
+  parentPid: number | null;
+  name: string | null;
+  commandLine: string | null;
+  isCodex: boolean;
+}
+
+interface DebugReport {
+  generatedAt: string;
+  command: "debug";
+  environment: {
+    platform: NodeJS.Platform;
+    pid: number;
+    ppid: number;
+    CODEX_PID: string | null;
+    CODEX_THREAD_ID: string | null;
+    CODEX_MANAGED_BY_NPM: string | null;
+    CODEX_MANAGED_PACKAGE_ROOT: string | null;
+  };
+  processIdentity: {
+    hookParentPid: number | null;
+    hookSessionPid: number | null;
+    hookSessionPidSource: "CODEX_PID" | "ppid-chain" | null;
+    envCodexPid: number | null;
+    recursiveCodexPid: number | null;
+    directParentIsCodex: boolean;
+    codexAncestorCount: number;
+  };
+  processLineage: DebugProcessRow[];
+  ledger: {
+    projectRoot: string;
+    sessionId: string;
+    summary: unknown;
+    recentRuns: Array<{
+      runKey: string;
+      agentId: string | null;
+      subagentId: string;
+      state: "running" | "stopped" | "closed";
+      hookParentPid: number | null;
+      hookSessionPid: number | null;
+      startTime: string;
+      stopTime: string | null;
+      stopEventId: number | null;
+      stopPayloadPresent: boolean;
+    }>;
+    pidGroups: {
+      hookParentPid: Array<{ pid: number | null; count: number }>;
+      hookSessionPid: Array<{ pid: number | null; count: number }>;
+    };
+  };
+  assessment: {
+    ppidMatchesCodex: boolean;
+    sessionPidResolved: boolean;
+    staleDetectionAvailable: boolean;
+    notes: string[];
+  };
+}
+
 export async function main(argv = process.argv.slice(2), env = process.env): Promise<void> {
   const options = parseArgs(argv);
 
@@ -74,8 +140,14 @@ export async function main(argv = process.argv.slice(2), env = process.env): Pro
   }
 
   if (options.command === "hook") {
-    const { runHook } = await import("./hook.js");
-    await runHook();
+    try {
+      const { runHook } = await import("./hook.js");
+      await runHook();
+    } catch (error: unknown) {
+      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+      process.stdout.write("{}\n");
+      process.exitCode = 1;
+    }
     return;
   }
 
@@ -85,6 +157,12 @@ export async function main(argv = process.argv.slice(2), env = process.env): Pro
   const ledger = SubagentLedger.open(projectRoot);
 
   try {
+    if (options.command === "debug") {
+      const report = buildDebugReport(ledger.listSession(sessionId, true), ledger.summary(sessionId), sessionId, projectRoot, env);
+      writeDebugReport(report, options.output);
+      return;
+    }
+
     if (options.command === "reset") {
       if (options.agent) {
         const result = ledger.resetClosed(sessionId, options.agent);
@@ -155,17 +233,27 @@ function parseArgs(argv: string[]): CliOptions {
     timeoutMs: 30000,
     intervalMs: 1000,
     output: "json",
+    outputExplicit: false,
     detail: "medium",
     detailExplicit: false,
     fullBeforeReset: false,
     hasListFilter: false,
+    allRequested: false,
+    listFilterArgs: [],
+    detailArgs: [],
+    waitOptionArgs: [],
     status: "running",
     human: false
   };
 
+  let commandSeen = false;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === "list" || arg === "running" || arg === "reset" || arg === "wait" || arg === "hook") {
+    if (arg === "list" || arg === "running" || arg === "reset" || arg === "wait" || arg === "hook" || arg === "debug") {
+      if (commandSeen) {
+        throw new Error("only one command may be provided");
+      }
+      commandSeen = true;
       if (arg === "reset" && options.detail === "full" && options.detailExplicit) {
         options.fullBeforeReset = true;
       }
@@ -173,6 +261,7 @@ function parseArgs(argv: string[]): CliOptions {
       if (arg === "list") {
         options.status = "all";
         options.hasListFilter = true;
+        options.listFilterArgs.push("list");
       }
       if (arg === "running") {
         options.status = "running";
@@ -182,12 +271,20 @@ function parseArgs(argv: string[]): CliOptions {
     }
 
     if (arg === "help" || arg === "--help" || arg === "-h") {
+      if (commandSeen) {
+        throw new Error("only one command may be provided");
+      }
       options.command = "help";
+      commandSeen = true;
       continue;
     }
 
     if (arg === "--version" || arg === "-v") {
+      if (commandSeen) {
+        throw new Error("only one command may be provided");
+      }
       options.command = "version";
+      commandSeen = true;
       continue;
     }
 
@@ -198,20 +295,25 @@ function parseArgs(argv: string[]): CliOptions {
 
     if (arg === "--json") {
       options.output = "json";
+      options.outputExplicit = true;
       continue;
     }
 
     if (arg === "--yaml" || arg === "--yml") {
       options.output = "yaml";
+      options.outputExplicit = true;
       continue;
     }
 
     if (arg === "--text") {
       options.output = "text";
+      options.outputExplicit = true;
       continue;
     }
 
     if (arg === "--all") {
+      options.allRequested = true;
+      options.listFilterArgs.push("--all");
       if (options.command === "wait") {
         options.waitAllRunning = true;
       } else if (options.command === "reset") {
@@ -225,24 +327,28 @@ function parseArgs(argv: string[]): CliOptions {
 
     if (arg === "--all-running") {
       options.waitAllRunning = true;
+      options.waitOptionArgs.push("--all-running");
       continue;
     }
 
     if (arg === "--running") {
       options.status = "running";
       options.hasListFilter = true;
+      options.listFilterArgs.push("--running");
       continue;
     }
 
     if (arg === "--stopped") {
       options.status = "stopped";
       options.hasListFilter = true;
+      options.listFilterArgs.push("--stopped");
       continue;
     }
 
     if (arg === "--closed") {
       options.status = "closed";
       options.hasListFilter = true;
+      options.listFilterArgs.push("--closed");
       continue;
     }
 
@@ -253,6 +359,7 @@ function parseArgs(argv: string[]): CliOptions {
       }
       options.status = parseStatus(value);
       options.hasListFilter = true;
+      options.listFilterArgs.push("--status");
       index += 1;
       continue;
     }
@@ -260,6 +367,7 @@ function parseArgs(argv: string[]): CliOptions {
     if (arg.startsWith("--status=")) {
       options.status = parseStatus(arg.slice("--status=".length));
       options.hasListFilter = true;
+      options.listFilterArgs.push("--status");
       continue;
     }
 
@@ -270,6 +378,7 @@ function parseArgs(argv: string[]): CliOptions {
       }
       options.afterTimestamp = parseUnixTimestamp(value, "--after-timestamp");
       options.hasListFilter = true;
+      options.listFilterArgs.push("--after-timestamp");
       index += 1;
       continue;
     }
@@ -277,6 +386,7 @@ function parseArgs(argv: string[]): CliOptions {
     if (arg.startsWith("--after-timestamp=")) {
       options.afterTimestamp = parseUnixTimestamp(arg.slice("--after-timestamp=".length), "--after-timestamp");
       options.hasListFilter = true;
+      options.listFilterArgs.push("--after-timestamp");
       continue;
     }
 
@@ -286,6 +396,7 @@ function parseArgs(argv: string[]): CliOptions {
       }
       options.detail = "medium";
       options.detailExplicit = true;
+      options.detailArgs.push("--medium");
       continue;
     }
 
@@ -296,6 +407,7 @@ function parseArgs(argv: string[]): CliOptions {
       }
       options.detail = "full";
       options.detailExplicit = true;
+      options.detailArgs.push("--full");
       continue;
     }
 
@@ -309,6 +421,7 @@ function parseArgs(argv: string[]): CliOptions {
       }
       options.detail = parseDetail(value);
       options.detailExplicit = true;
+      options.detailArgs.push("--detail");
       index += 1;
       continue;
     }
@@ -319,6 +432,7 @@ function parseArgs(argv: string[]): CliOptions {
       }
       options.detail = parseDetail(arg.slice("--detail=".length));
       options.detailExplicit = true;
+      options.detailArgs.push("--detail");
       continue;
     }
 
@@ -386,17 +500,20 @@ function parseArgs(argv: string[]): CliOptions {
         throw new Error(`${arg} requires a value`);
       }
       options.timeoutMs = parseMilliseconds(value, arg);
+      options.waitOptionArgs.push(arg);
       index += 1;
       continue;
     }
 
     if (arg.startsWith("--timeout-ms=")) {
       options.timeoutMs = parseMilliseconds(arg.slice("--timeout-ms=".length), "--timeout-ms");
+      options.waitOptionArgs.push("--timeout-ms");
       continue;
     }
 
     if (arg.startsWith("--timeout=")) {
       options.timeoutMs = parseMilliseconds(arg.slice("--timeout=".length), "--timeout");
+      options.waitOptionArgs.push("--timeout");
       continue;
     }
 
@@ -406,17 +523,20 @@ function parseArgs(argv: string[]): CliOptions {
         throw new Error(`${arg} requires a value`);
       }
       options.intervalMs = parseMilliseconds(value, arg);
+      options.waitOptionArgs.push(arg);
       index += 1;
       continue;
     }
 
     if (arg.startsWith("--interval-ms=")) {
       options.intervalMs = parseMilliseconds(arg.slice("--interval-ms=".length), "--interval-ms");
+      options.waitOptionArgs.push("--interval-ms");
       continue;
     }
 
     if (arg.startsWith("--poll-ms=")) {
       options.intervalMs = parseMilliseconds(arg.slice("--poll-ms=".length), "--poll-ms");
+      options.waitOptionArgs.push("--poll-ms");
       continue;
     }
 
@@ -432,12 +552,101 @@ function parseArgs(argv: string[]): CliOptions {
     options.status = "all";
   }
 
+  validateCommandOptions(options);
   enforceHumanOverride(options);
 
   return options;
 }
 
+function validateCommandOptions(options: CliOptions): void {
+  if (options.command === "help" || options.command === "version") {
+    return;
+  }
+
+  if (options.command === "wait") {
+    if (options.allRequested) {
+      options.waitAllRunning = true;
+    }
+    const unsupportedListArg = options.listFilterArgs.find((arg) => arg !== "--all");
+    if (unsupportedListArg) {
+      throw new Error(`wait does not support ${unsupportedListArg}`);
+    }
+    if (options.detailArgs.length > 0) {
+      throw new Error(`wait does not support ${options.detailArgs[0]}`);
+    }
+    return;
+  }
+
+  if (options.waitOptionArgs.length > 0) {
+    throw new Error(`${options.waitOptionArgs[0]} is only supported by wait`);
+  }
+
+  if (options.command === "hook") {
+    if (options.allRequested) {
+      throw new Error("hook does not support --all");
+    }
+    if (options.listFilterArgs.length > 0) {
+      throw new Error(`hook does not support ${options.listFilterArgs[0]}`);
+    }
+    if (options.detailArgs.length > 0) {
+      throw new Error(`hook does not support ${options.detailArgs[0]}`);
+    }
+    if (options.outputExplicit) {
+      throw new Error("hook does not support output format options");
+    }
+    if (options.session !== undefined) {
+      throw new Error("hook does not support --session; hook session comes from stdin");
+    }
+    if (options.cwd !== undefined) {
+      throw new Error("hook does not support --cwd; hook project comes from stdin cwd");
+    }
+    if (options.agent !== undefined) {
+      throw new Error("hook does not support --agent");
+    }
+    if (options.human) {
+      throw new Error("hook does not support --human");
+    }
+    return;
+  }
+
+  if (options.command === "debug") {
+    if (options.allRequested) {
+      throw new Error("debug does not support --all");
+    }
+    if (options.listFilterArgs.length > 0) {
+      throw new Error(`debug does not support ${options.listFilterArgs[0]}`);
+    }
+    if (options.detailArgs.length > 0) {
+      throw new Error(`debug does not support ${options.detailArgs[0]}`);
+    }
+    if (options.agent !== undefined) {
+      throw new Error("debug does not support --agent");
+    }
+    return;
+  }
+
+  if (options.command !== "reset") {
+    return;
+  }
+
+  if (options.allRequested) {
+    throw new Error("reset full mode must use reset --full");
+  }
+
+  if (options.listFilterArgs.length > 0) {
+    throw new Error(`reset does not support ${options.listFilterArgs[0]}`);
+  }
+
+  if (options.detailArgs.length > 0 && !options.fullBeforeReset) {
+    throw new Error(`reset does not support ${options.detailArgs[0]}`);
+  }
+}
+
 function enforceHumanOverride(options: CliOptions): void {
+  if (options.command === "debug" && !options.human) {
+    throw new Error("debug requires --human and is intended for manual diagnostics");
+  }
+
   if (options.command === "reset" && options.agent && !options.human) {
     throw new Error("reset --agent requires --human and is intended for manual debugging");
   }
@@ -656,6 +865,160 @@ function writeWaitResult(result: WaitResult, output: "json" | "yaml" | "text"): 
   process.stdout.write(formatWaitResult(result));
 }
 
+function buildDebugReport(runs: SubagentRun[], summary: unknown, sessionId: string, projectRoot: string, env: NodeJS.ProcessEnv): DebugReport {
+  const lineage = collectProcessLineage(process.pid);
+  const ancestors = lineage.slice(1);
+  const resolution = resolveCodexSessionPid(ancestors, env);
+  const processLineage = lineage.map((processInfo, index) => ({
+    depth: index,
+    pid: processInfo.pid,
+    parentPid: processInfo.parentPid,
+    name: processInfo.name,
+    commandLine: processInfo.commandLine,
+    isCodex: isCodexProcess(processInfo)
+  }));
+  const hookParentPid = lineage[0]?.parentPid ?? process.ppid;
+  const directParent = processLineage.find((processInfo) => processInfo.pid === hookParentPid);
+  const recentRuns = runs.slice(0, 10).map((run) => ({
+    runKey: run.runKey,
+    agentId: run.agentId,
+    subagentId: run.subagentId,
+    state: publicRunState(run),
+    hookParentPid: run.hookParentPid,
+    hookSessionPid: run.hookSessionPid,
+    startTime: run.startTime,
+    stopTime: run.stopTime,
+    stopEventId: run.stopEventId,
+    stopPayloadPresent: run.stopPayload !== null
+  }));
+  const notes = debugNotes(resolution.hookSessionPid, resolution.source, processLineage, directParent);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    command: "debug",
+    environment: {
+      platform: process.platform,
+      pid: process.pid,
+      ppid: process.ppid,
+      CODEX_PID: env.CODEX_PID ?? null,
+      CODEX_THREAD_ID: env.CODEX_THREAD_ID ?? null,
+      CODEX_MANAGED_BY_NPM: env.CODEX_MANAGED_BY_NPM ?? null,
+      CODEX_MANAGED_PACKAGE_ROOT: env.CODEX_MANAGED_PACKAGE_ROOT ?? null
+    },
+    processIdentity: {
+      hookParentPid,
+      hookSessionPid: resolution.hookSessionPid,
+      hookSessionPidSource: resolution.source,
+      envCodexPid: resolution.envCodexPid,
+      recursiveCodexPid: resolution.recursiveCodexPid,
+      directParentIsCodex: directParent?.isCodex ?? false,
+      codexAncestorCount: processLineage.filter((processInfo) => processInfo.depth > 0 && processInfo.isCodex).length
+    },
+    processLineage,
+    ledger: {
+      projectRoot,
+      sessionId,
+      summary,
+      recentRuns,
+      pidGroups: {
+        hookParentPid: pidGroups(runs.map((run) => run.hookParentPid)),
+        hookSessionPid: pidGroups(runs.map((run) => run.hookSessionPid))
+      }
+    },
+    assessment: {
+      ppidMatchesCodex: directParent?.isCodex ?? false,
+      sessionPidResolved: resolution.hookSessionPid !== null,
+      staleDetectionAvailable: resolution.hookSessionPid !== null,
+      notes
+    }
+  };
+}
+
+function writeDebugReport(report: DebugReport, output: "json" | "yaml" | "text"): void {
+  if (output === "json") {
+    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+    return;
+  }
+
+  if (output === "yaml") {
+    process.stdout.write(toYaml(report));
+    return;
+  }
+
+  process.stdout.write(formatDebugReport(report));
+}
+
+function formatDebugReport(report: DebugReport): string {
+  const identity = report.processIdentity;
+  const lines = [
+    `debug generated=${report.generatedAt}`,
+    `env CODEX_PID=${report.environment.CODEX_PID ?? "null"} CODEX_THREAD_ID=${report.environment.CODEX_THREAD_ID ?? "null"} managed_by_npm=${report.environment.CODEX_MANAGED_BY_NPM ?? "null"}`,
+    `process pid=${report.environment.pid} ppid=${report.environment.ppid} hookParentPid=${identity.hookParentPid ?? "null"} hookSessionPid=${identity.hookSessionPid ?? "null"} source=${identity.hookSessionPidSource ?? "null"} recursiveCodexPid=${identity.recursiveCodexPid ?? "null"}`,
+    `assessment ppidMatchesCodex=${report.assessment.ppidMatchesCodex} sessionPidResolved=${report.assessment.sessionPidResolved} staleDetectionAvailable=${report.assessment.staleDetectionAvailable}`,
+    `ledger project=${report.ledger.projectRoot} session=${report.ledger.sessionId}`,
+    "process lineage:"
+  ];
+
+  for (const row of report.processLineage) {
+    lines.push(`  [${row.depth}] pid=${row.pid} ppid=${row.parentPid ?? "null"} codex=${row.isCodex} name=${row.name ?? "null"} cmd=${row.commandLine ?? "null"}`);
+  }
+
+  lines.push("ledger hook_session_pid groups:");
+  for (const group of report.ledger.pidGroups.hookSessionPid) {
+    lines.push(`  pid=${group.pid ?? "null"} count=${group.count}`);
+  }
+
+  lines.push("notes:");
+  for (const note of report.assessment.notes) {
+    lines.push(`  - ${note}`);
+  }
+
+  return `${lines.join("\n")}\n`;
+}
+
+function debugNotes(
+  hookSessionPid: number | null,
+  source: "CODEX_PID" | "ppid-chain" | null,
+  processLineage: DebugProcessRow[],
+  directParent: DebugProcessRow | undefined
+): string[] {
+  const notes: string[] = [];
+  if (directParent?.isCodex) {
+    notes.push("The direct parent process is recognized as Codex.");
+  } else {
+    notes.push("The direct parent process is not recognized as Codex.");
+  }
+
+  if (hookSessionPid === null) {
+    notes.push("No Codex session PID was resolved; stale pid-change detection will not run for this hook invocation.");
+  } else if (source === "CODEX_PID") {
+    notes.push("Codex session PID came from CODEX_PID.");
+  } else if (source === "ppid-chain") {
+    notes.push("Codex session PID came from recursive ppid-chain lookup.");
+  }
+
+  if (processLineage.length === 0) {
+    notes.push("Process lineage collection returned no rows.");
+  }
+
+  return notes;
+}
+
+function pidGroups(values: Array<number | null>): Array<{ pid: number | null; count: number }> {
+  const counts = new Map<string, { pid: number | null; count: number }>();
+  for (const pid of values) {
+    const key = pid === null ? "null" : String(pid);
+    const existing = counts.get(key);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      counts.set(key, { pid, count: 1 });
+    }
+  }
+
+  return [...counts.values()].sort((left, right) => right.count - left.count);
+}
+
 function formatWaitResult(result: WaitResult): string {
   const summary = result.summary;
   const lines = [
@@ -756,6 +1119,7 @@ function helpText(): string {
   subagent-auto-manager [running|list] [--session <id>] [--cwd <project>] [--agent <id>] [--status running|stopped|closed|all] [--after-timestamp <unix-seconds>] [--json|--yaml|--text] [--detail medium|full]
   subagent-auto-manager reset [--full --human] [--agent <id> --human] [--session <id>] [--cwd <project>] [--json|--yaml|--text]
   subagent-auto-manager wait [agent-id ...] [--all] [--timeout-ms <ms>] [--interval-ms <ms>] [--session <id>] [--cwd <project>] [--json|--yaml|--text]
+  subagent-auto-manager debug --human [--session <id>] [--cwd <project>] [--json|--yaml|--text]
   subagent-auto-manager hook
 
 Defaults:
@@ -771,6 +1135,7 @@ Defaults:
   Broad all/closed listing and --after-timestamp are manual debugging queries.
   reset marks stopped, not-closed agents as closed. reset --full --human marks running and stopped, not-closed agents as closed. With --agent and --human, reset clears one closed mark for manual debugging.
   wait polls the hook ledger until every target is stopped. During polling, newly stopped agent ids stream to stderr. With no explicit targets, wait snapshots current running, not-closed agents.
+  debug prints a human diagnostics report for CODEX_PID, recursive ppid Codex detection, process lineage, and ledger PID groups.
 
 Hook config command:
   npx -y subagent-auto-manager@latest hook
