@@ -60,7 +60,7 @@ npx -y subagent-auto-manager@latest wait --session <session-id> --cwd <project> 
 
 `reset` marks stopped, not-closed runs as closed. `reset --full --human` marks running and stopped, not-closed runs as closed. `reset --agent <id> --human` clears one closed mark and is only for manual debugging.
 
-`wait` streams each newly stopped agent id to stderr during polling and keeps stdout for the final result document. On timeout, it exits with code 1 and reports the targets that are still `running` or `missing`; JSON/YAML output includes these rows in `incompleteTargets`, and text output prints only those incomplete `RUN`/`MISS` rows after the timeout summary.
+`wait` streams each newly stopped agent id to stderr during polling and keeps stdout for the final result document. On timeout, it exits with code 1 and reports targets that did not emit `SubagentStop`; JSON/YAML output includes these rows in `incompleteTargets`, text output prints `Pending` for targets that started but have not returned yet and `Miss` for targets with no matching ledger row, and stderr receives one `[subagent-auto-manager] wait timeout ...` line for each incomplete target.
 
 ## Verification
 
@@ -112,7 +112,7 @@ The run created `<project>/.codex/subagent_auto_manager.db/ledger.sqlite3`. With
 
 ```text
 session 019e894e-a420-75b2-8212-91b56a532b05 total=1 running=0 stopped=1 closed=0
-DONE 019e894e-e039-7b20-bd72-1140f9d2e96c explorer 12s
+Stopped 019e894e-e039-7b20-bd72-1140f9d2e96c explorer 12s
 ```
 
 Using another `CODEX_THREAD_ID` returned an empty result, verifying session isolation for the CLI path.

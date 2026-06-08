@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { buildOutput } from "./output.js";
 import type { SessionSummary, SubagentRun } from "./types.js";
 
-test("summary output hides runs", () => {
+test("summary output omits runs", () => {
   const output = buildOutput(summary(), [run()], "summary");
 
   assert.deepEqual(output.summary, {
@@ -13,7 +13,7 @@ test("summary output hides runs", () => {
     total: 1,
     shown: 1
   });
-  assert.deepEqual(output.runs, []);
+  assert.equal("runs" in output, false);
 });
 
 test("compact output keeps only agent id and state", () => {

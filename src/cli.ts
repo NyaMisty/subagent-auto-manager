@@ -533,7 +533,12 @@ async function waitForAgents(
     writeWaitProgress(statuses, reportedStopped);
     const elapsedMs = Date.now() - startMs;
     const result = buildWaitResult(sessionId, statuses, options.timeoutMs, elapsedMs);
-    if (result.summary.complete || elapsedMs >= options.timeoutMs) {
+    if (result.summary.complete) {
+      return result;
+    }
+
+    if (elapsedMs >= options.timeoutMs) {
+      writeWaitTimeout(result.incompleteTargets);
       return result;
     }
 
@@ -624,6 +629,17 @@ function writeWaitProgress(targets: WaitTargetStatus[], reportedStopped: Set<str
   }
 }
 
+function writeWaitTimeout(targets: WaitTargetStatus[]): void {
+  for (const target of targets) {
+    const type = target.agentType ? ` type=${target.agentType}` : "";
+    if (target.agentId ?? target.subagentId) {
+      process.stderr.write(`[subagent-auto-manager] wait timeout agentId=${target.agentId ?? target.subagentId} state=${target.state}${type}\n`);
+    } else {
+      process.stderr.write(`[subagent-auto-manager] wait timeout target=${target.target} state=${target.state}\n`);
+    }
+  }
+}
+
 function writeWaitResult(result: WaitResult, output: "json" | "yaml" | "text"): void {
   if (output === "json") {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
@@ -648,7 +664,7 @@ function formatWaitResult(result: WaitResult): string {
 
   const visibleTargets = summary.complete ? result.targets : result.incompleteTargets;
   for (const target of visibleTargets) {
-    const label = target.state === "stopped" ? "DONE" : target.state === "running" ? "RUN" : "MISS";
+    const label = target.state === "stopped" ? "Stopped" : target.state === "running" ? "Pending" : "Miss";
     const name = target.agentId ?? target.subagentId ?? target.target;
     const type = target.agentType ? ` ${target.agentType}` : "";
     lines.push(`${label} ${name}${type}`);

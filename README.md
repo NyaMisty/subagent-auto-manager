@@ -137,7 +137,7 @@ Wait until every listed subagent has emitted `SubagentStop`:
 npx -y subagent-auto-manager@latest wait 019e87b0-d695-7902-96e1-9672e0a12db6 019e87b0-9c23-72d9-bcb1-4907652aa0ab
 ```
 
-The built-in Codex subagent wait tool returns when one target completes. This CLI command polls the hook ledger and returns only when all requested targets are stopped. While waiting, each newly stopped agent id is streamed to stderr; stdout stays reserved for the final JSON/YAML/text result. It exits non-zero on timeout and reports the still-running or missing targets that did not emit `SubagentStop`. JSON/YAML output includes an `incompleteTargets` array; text output prints only the incomplete `RUN` and `MISS` rows after the timeout summary:
+The built-in Codex subagent wait tool returns when one target completes. This CLI command polls the hook ledger and returns only when all requested targets are stopped. While waiting, each newly stopped agent id is streamed to stderr; stdout stays reserved for the final JSON/YAML/text result. It exits non-zero on timeout and reports targets that did not emit `SubagentStop`. JSON/YAML output includes an `incompleteTargets` array; text output prints `Pending` for targets that started but have not returned yet, and `Miss` for targets with no matching ledger row. On timeout, each incomplete target is also streamed to stderr as `[subagent-auto-manager] wait timeout ...`, including `Miss` targets:
 
 ```sh
 npx -y subagent-auto-manager@latest wait --agent 019e87b0-d695-7902-96e1-9672e0a12db6 --agent 019e87b0-9c23-72d9-bcb1-4907652aa0ab --timeout-ms 600000 --text

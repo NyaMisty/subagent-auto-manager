@@ -19,7 +19,7 @@ export function formatSession(summary: SessionSummary, runs: SubagentRun[], opti
     const name = run.agentId ?? run.subagentId;
     const type = run.agentType ? ` ${run.agentType}` : "";
     const state = publicRunState(run);
-    const status = state === "closed" ? "CLOSED" : state === "running" ? "RUN" : "DONE";
+    const status = state === "closed" ? "Closed" : state === "running" ? "Pending" : "Stopped";
     const elapsed = elapsedLabel(run, options.now ?? new Date());
     const prompt = run.prompt ? ` ${truncate(oneLine(run.prompt), 72)}` : "";
     lines.push(`${status} ${name}${type} ${elapsed}${prompt}`);

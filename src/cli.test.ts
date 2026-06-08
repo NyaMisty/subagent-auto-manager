@@ -12,7 +12,7 @@ import { databasePath } from "./paths.js";
 const require = createRequire(import.meta.url);
 const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
 
-test("defaults output to summary JSON without runs", async () => {
+test("defaults output to summary JSON without runs property", async () => {
   const root = tempRoot();
   seedRun(root, "session-json", "running");
   seedRun(root, "session-json", "stopped", "agent-stopped");
@@ -31,7 +31,7 @@ test("defaults output to summary JSON without runs", async () => {
       total: 2,
       shown: 1
     });
-    assert.deepEqual(parsed.runs, []);
+    assert.equal("runs" in parsed, false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -142,8 +142,7 @@ test("defaults empty list output to JSON", async () => {
         closed: 0,
         total: 0,
         shown: 0
-      },
-      runs: []
+      }
     });
     assert.match(result.stderr, /filter=running format=json detail=summary/);
   } finally {
@@ -273,7 +272,7 @@ test("filters closed agents, closes stopped runs by reset, and clears one closed
     assert.equal(parsed.runs.every((run: { state: string }) => run.state === "closed"), true);
     assert.equal(parsed.runs.some((run: Record<string, unknown>) => "closed" in run), false);
     assert.equal(parsed.runs.some((run: Record<string, unknown>) => "status" in run), false);
-    assert.deepEqual(JSON.parse(running.stdout).runs, []);
+    assert.equal("runs" in JSON.parse(running.stdout), false);
     assert.match(closed.stderr, /filter=closed/);
     assert.equal(resetStopped.stdout, "reset stopped session=session-closed matched=1 closed=1\n");
     assert.equal(resetNeedsHuman.stdout, "");
@@ -311,7 +310,7 @@ test("reset --full closes running and stopped runs", async () => {
   try {
     assert.match(needsHuman.stderr, /reset --full requires --human/);
     assert.equal(result.stdout, "reset full session=session-reset-full matched=2 closed=2\n");
-    assert.deepEqual(JSON.parse(running.stdout).runs, []);
+    assert.equal("runs" in JSON.parse(running.stdout), false);
     const parsed = JSON.parse(closed.stdout);
     assert.equal(parsed.summary.running, 0);
     assert.equal(parsed.summary.stopped, 0);
@@ -514,9 +513,13 @@ test("wait times out for running or missing targets", async () => {
 
   try {
     assert.match(result.stdout, /^wait timeout session=session-wait-timeout targets=3 stopped=1 running=1 missing=1 /);
-    assert.match(result.stdout, /RUN agent-running explorer/);
-    assert.match(result.stdout, /MISS agent-missing/);
-    assert.equal(result.stdout.includes("DONE agent-done"), false);
+    assert.match(result.stdout, /Pending agent-running explorer/);
+    assert.match(result.stdout, /Miss agent-missing/);
+    assert.equal(result.stdout.includes("Stopped agent-done"), false);
+    assert.match(result.stderr, /\[subagent-auto-manager\] wait stopped agentId=agent-done type=explorer/);
+    assert.match(result.stderr, /\[subagent-auto-manager\] wait timeout agentId=agent-running state=running type=explorer/);
+    assert.match(result.stderr, /\[subagent-auto-manager\] wait timeout target=agent-missing state=missing/);
+    assert.doesNotMatch(result.stderr, /wait timeout agentId=agent-done/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

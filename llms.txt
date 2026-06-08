@@ -34,8 +34,7 @@ Default no-arg output:
     "closed": 0,
     "total": 12,
     "shown": 12
-  },
-  "runs": []
+  }
 }
 ```
 
@@ -64,6 +63,16 @@ Filtered output returns only:
 `stopped`: `SubagentStop` seen, or a later `SubagentStart` for the same `session_id` came from a different hook parent PID after parent shutdown. The subagent turn ended or was made stale. The thread may still be open.
 
 `closed`: successful Codex built-in `close_agent` was seen. `resume_agent` clears this mark.
+
+Text labels:
+
+`Pending`: the target has a ledger row from `SubagentStart`, but no `SubagentStop` has been recorded yet; it started and has not returned.
+
+`Stopped`: the target has emitted `SubagentStop`, or was marked stale after parent restart.
+
+`Miss`: a requested wait target did not match any ledger row; there is no recorded start for that target in this session/project ledger.
+
+`Closed`: the parent thread was closed through `close_agent`; this is separate from `Stopped`.
 
 ## Built-In Tool Mapping
 
@@ -95,7 +104,7 @@ npx -y subagent-auto-manager@latest wait --timeout-ms 600000 --text
 npx -y subagent-auto-manager@latest wait --agent <agent-a> --agent <agent-b> --timeout-ms 600000 --text
 ```
 
-During wait, stopped agents stream to stderr. Final result stays on stdout.
+During wait, stopped agents stream to stderr. Final result stays on stdout. On timeout, exit code is 1; stdout uses `Pending` for started targets that have not returned and `Miss` for targets with no matching ledger row. Stderr emits one `[subagent-auto-manager] wait timeout ...` line per incomplete target.
 
 ## Reset
 

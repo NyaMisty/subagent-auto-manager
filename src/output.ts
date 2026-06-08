@@ -5,17 +5,19 @@ export type DetailLevel = "summary" | "compact" | "medium" | "full";
 
 export interface OutputDocument {
   summary: unknown;
-  runs: unknown[];
+  runs?: unknown[];
 }
 
 export function buildOutput(summary: SessionSummary, runs: SubagentRun[], detail: DetailLevel): OutputDocument {
-  return {
-    summary: detail === "full" ? fullSummary(summary, runs) : mediumSummary(summary, runs),
-    runs:
-      detail === "summary"
-        ? []
-        : runs.map((run) => (detail === "full" ? fullRun(run) : detail === "medium" ? mediumRun(run) : compactRun(run)))
+  const output: OutputDocument = {
+    summary: detail === "full" ? fullSummary(summary, runs) : mediumSummary(summary, runs)
   };
+
+  if (detail !== "summary") {
+    output.runs = runs.map((run) => (detail === "full" ? fullRun(run) : detail === "medium" ? mediumRun(run) : compactRun(run)));
+  }
+
+  return output;
 }
 
 function mediumSummary(summary: SessionSummary, runs: SubagentRun[]): Record<string, unknown> {

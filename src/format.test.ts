@@ -20,8 +20,8 @@ test("formats optional compact human-readable session output", () => {
     formatSession(summary, runs, { now: new Date("2026-06-02T00:00:03.000Z") }),
     [
       "session 019e87b0-d695-7902-96e1-9672e0a12db6 total=2 running=1 stopped=0 closed=1",
-      "RUN agent-running general 3s review files and report issues",
-      "CLOSED agent-stopped general 2s",
+      "Pending agent-running general 3s review files and report issues",
+      "Closed agent-stopped general 2s",
       ""
     ].join("\n")
   );
@@ -48,8 +48,8 @@ test("keeps full ids in human-readable session output", () => {
     ),
     [
       "session 019ea294-6b54-77a2-bbcf-a1e3abaaf2b6 total=2 running=2 stopped=0 closed=0",
-      "RUN 019ea5aa-0000-7000-8000-000000000001 general 3s",
-      "RUN 019ea5aa-0000-7000-8000-000000000002 general 3s",
+      "Pending 019ea5aa-0000-7000-8000-000000000001 general 3s",
+      "Pending 019ea5aa-0000-7000-8000-000000000002 general 3s",
       ""
     ].join("\n")
   );
