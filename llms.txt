@@ -63,7 +63,7 @@ Filtered output returns only:
 
 `running`: `SubagentStart` seen; no `SubagentStop`; not closed.
 
-`stopped`: `SubagentStop` seen, or a later `SubagentStart` for the same `session_id` came from a different hook parent PID after parent shutdown. The subagent turn ended or was made stale. The thread may still be open.
+`stopped`: `SubagentStop` seen, or a later `SubagentStart` for the same `session_id` came from a different identified Codex session process after parent shutdown. The subagent turn ended or was made stale. The thread may still be open.
 
 `closed`: successful Codex built-in `close_agent` was seen. `resume_agent` clears this mark.
 
@@ -73,7 +73,7 @@ Text labels:
 
 `Stopped`: the target has emitted `SubagentStop`, or was marked stale after parent restart.
 
-`stopReason`: `hook` means `SubagentStop` was recorded. `pid-change` means the row was auto-marked stopped because a later start for the same session came from a different hook parent PID.
+`stopReason`: `hook` means `SubagentStop` was recorded. `pid-change` means the row was auto-marked stopped because a later start for the same session came from a different identified Codex session process.
 
 `Miss`: a requested wait target did not match any ledger row; there is no recorded start for that target in this session/project ledger.
 
@@ -84,7 +84,7 @@ Text labels:
 ```text
 spawn_agent       -> SubagentStart             -> running
 subagent finishes -> SubagentStop              -> stopped
-parent restart    -> SubagentStart parent PID change -> stale running agents become stopped
+parent restart    -> SubagentStart Codex session process change -> stale running agents become stopped
 close_agent       -> PostToolUse close_agent   -> closed
 resume_agent      -> PostToolUse resume_agent  -> clears closed
 ```
@@ -149,4 +149,4 @@ After changing hooks, open `/hooks` in Codex and trust them.
 <project>/.codex/subagent_auto_manager.db/ledger.sqlite3
 ```
 
-Hooks use `session_id` and record the hook parent PID. CLI defaults to `CODEX_THREAD_ID`.
+Hooks use `session_id`, record the hook parent PID for diagnostics, and use `CODEX_PID` or a recursively discovered Codex ancestor process PID for stale-run detection. CLI defaults to `CODEX_THREAD_ID`.

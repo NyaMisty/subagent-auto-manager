@@ -491,7 +491,67 @@ test("keeps sessions isolated in the same project database", () => {
   }
 });
 
-test("auto-stops prior running subagents when hook parent pid changes in the same session", () => {
+test("keeps running subagents when hook parent pid changes under the same Codex session process", () => {
+  const root = tempRoot();
+  const ledger = SubagentLedger.open(root);
+
+  try {
+    ledger.record({
+      eventName: "SubagentStart",
+      sessionId: "session-wrapper-pid",
+      projectRoot: root,
+      hookParentPid: 100,
+      hookSessionPid: 9000,
+      payload: {
+        hook_event_name: "SubagentStart",
+        session_id: "session-wrapper-pid",
+        agent_id: "agent-first-wrapper",
+        agent_type: "explorer",
+        cwd: root,
+        prompt: "first wrapper"
+      }
+    });
+
+    ledger.record({
+      eventName: "SubagentStart",
+      sessionId: "session-wrapper-pid",
+      projectRoot: root,
+      hookParentPid: 200,
+      hookSessionPid: 9000,
+      payload: {
+        hook_event_name: "SubagentStart",
+        session_id: "session-wrapper-pid",
+        agent_id: "agent-second-wrapper",
+        agent_type: "explorer",
+        cwd: root,
+        prompt: "second wrapper"
+      }
+    });
+
+    assert.deepEqual(ledger.summary("session-wrapper-pid"), {
+      sessionId: "session-wrapper-pid",
+      running: 2,
+      stopped: 0,
+      closed: 0,
+      total: 2
+    });
+
+    const runs = ledger.listSession("session-wrapper-pid");
+    const first = runs.find((run) => run.agentId === "agent-first-wrapper");
+    const second = runs.find((run) => run.agentId === "agent-second-wrapper");
+    assert.equal(first?.status, "running");
+    assert.equal(first?.hookParentPid, 100);
+    assert.equal(first?.hookSessionPid, 9000);
+    assert.equal(second?.status, "running");
+    assert.equal(second?.hookParentPid, 200);
+    assert.equal(second?.hookSessionPid, 9000);
+  } finally {
+    ledger.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("auto-stops prior running subagents when Codex session process changes in the same session", () => {
   const root = tempRoot();
   const ledger = SubagentLedger.open(root);
 
@@ -501,6 +561,7 @@ test("auto-stops prior running subagents when hook parent pid changes in the sam
       sessionId: "session-shutdown",
       projectRoot: root,
       hookParentPid: 100,
+      hookSessionPid: 9000,
       payload: {
         hook_event_name: "SubagentStart",
         session_id: "session-shutdown",
@@ -518,6 +579,7 @@ test("auto-stops prior running subagents when hook parent pid changes in the sam
       sessionId: "session-shutdown",
       projectRoot: root,
       hookParentPid: 200,
+      hookSessionPid: 9100,
       payload: {
         hook_event_name: "SubagentStart",
         session_id: "session-shutdown",
@@ -543,9 +605,11 @@ test("auto-stops prior running subagents when hook parent pid changes in the sam
     assert.equal(previous?.stopEventId, null);
     assert.equal(previous?.stopPayload, null);
     assert.equal(previous?.hookParentPid, 100);
+    assert.equal(previous?.hookSessionPid, 9000);
     assert.notEqual(previous?.stopTime, null);
     assert.equal(current?.status, "running");
     assert.equal(current?.hookParentPid, 200);
+    assert.equal(current?.hookSessionPid, 9100);
   } finally {
     ledger.close();
     rmSync(root, { recursive: true, force: true });

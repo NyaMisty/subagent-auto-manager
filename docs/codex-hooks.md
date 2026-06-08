@@ -12,7 +12,7 @@ The event name is read from `hook_event_name`.
 
 `PostToolUse` is used only for subagent thread state tracking. A successful `close_agent` call marks the target agent as `closed`; a successful `resume_agent` call clears that mark.
 
-The hook records the hook process parent PID in `hook_parent_pid`. When a later `SubagentStart` for the same `session_id` comes from a different parent PID, older running runs for that session are treated as stale after a parent shutdown and automatically marked `stopped`.
+The hook records the hook process parent PID in `hook_parent_pid` for diagnostics. It records `hook_session_pid` from `CODEX_PID` when that environment variable is set to a valid PID; otherwise it recursively walks the hook process `ppid` chain until it finds the nearest Codex process. When a later `SubagentStart` for the same `session_id` comes from a different identified Codex session process, older running runs for that session are treated as stale after a parent shutdown and automatically marked `stopped`. A direct hook parent PID change alone is ignored because shell, npm, and `npx` wrappers can be short-lived per hook invocation.
 
 ## Hook Configuration
 
@@ -152,6 +152,7 @@ Known fields are copied to queryable columns:
 
 - `session_id`
 - `hook_parent_pid`
+- `hook_session_pid`
 - `turn_id`
 - `agent_id`
 - `agent_type`
@@ -176,7 +177,9 @@ Every stored payload is also stored as compact raw JSON in `payload_json`, so ne
 
 `SubagentStop` means the subagent turn ended. It does not prove that the parent closed the agent thread.
 
-List output exposes `stopReason` for stopped and closed rows when available. `hook` means a real `SubagentStop` hook row was recorded. `pid-change` means a running row was marked stopped because a later `SubagentStart` for the same session came from a different hook parent PID.
+List output exposes `stopReason` for stopped and closed rows when available. `hook` means a real `SubagentStop` hook row was recorded. `pid-change` means a running row was marked stopped because a later `SubagentStart` for the same session came from a different identified Codex session process.
+
+Rows stopped with `pid-change` are stale markers, not raw `SubagentStop` records. They have `stop_time` and `stopReason: "pid-change"`, but no `stop_event_id` or `stop_payload`.
 
 Closed state is inferred from `PostToolUse`. Configure `PostToolUse` with `(close_agent|resume_agent)$` so Codex forwards bare names and namespaced tool-name variants.
 

@@ -2,6 +2,7 @@
 import { parseJsonObject, readStdin } from "./json.js";
 import { SubagentLedger } from "./ledger.js";
 import { projectRootFrom } from "./paths.js";
+import { currentHookProcessIdentity } from "./process-tree.js";
 import { isDirectEntry } from "./runtime.js";
 import { sessionIdFromHook } from "./session.js";
 import { SUPPORTED_EVENTS, type HookInput, type SupportedEvent } from "./types.js";
@@ -12,10 +13,11 @@ export async function runHook(): Promise<void> {
   const eventName = supportedEvent(payload.hook_event_name);
   const sessionId = sessionIdFromHook(payload);
   const projectRoot = projectRootFrom(payload);
+  const processIdentity = currentHookProcessIdentity();
   const ledger = SubagentLedger.open(projectRoot);
 
   try {
-    ledger.record({ eventName, sessionId, projectRoot, payload, hookParentPid: process.ppid });
+    ledger.record({ eventName, sessionId, projectRoot, payload, ...processIdentity });
   } finally {
     ledger.close();
   }

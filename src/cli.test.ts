@@ -257,10 +257,10 @@ test("filters list output by agent id", async () => {
   }
 });
 
-test("CLI running output excludes stale runs auto-stopped after hook parent pid changes", async () => {
+test("CLI running output excludes stale runs auto-stopped after Codex session process changes", async () => {
   const root = tempRoot();
-  seedRun(root, "session-parent-pid", "running", "agent-stale", 100);
-  seedRun(root, "session-parent-pid", "running", "agent-current", 200);
+  seedRun(root, "session-parent-pid", "running", "agent-stale", 100, 9000);
+  seedRun(root, "session-parent-pid", "running", "agent-current", 200, 9100);
   const result = runCli(["--cwd", root, "--running"], { CODEX_THREAD_ID: "session-parent-pid" });
 
   try {
@@ -741,7 +741,8 @@ function seedRun(
   sessionId: string,
   status: "running" | "stopped" = "stopped",
   agentId = "agent-1",
-  hookParentPid?: number
+  hookParentPid?: number,
+  hookSessionPid?: number
 ): void {
   const ledger = SubagentLedger.open(root);
   try {
@@ -750,6 +751,7 @@ function seedRun(
       sessionId,
       projectRoot: root,
       hookParentPid,
+      hookSessionPid,
       payload: {
         hook_event_name: "SubagentStart",
         session_id: sessionId,

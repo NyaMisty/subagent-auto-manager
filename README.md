@@ -61,7 +61,7 @@ Add this to Codex hooks config, for example project `.codex/hooks.json`:
 }
 ```
 
-The command reads Codex JSON from stdin and writes `{}` to stdout so Codex can continue normally. `SubagentStart` and `SubagentStop` payloads are stored in full. The hook also records the hook process parent PID; if a later `SubagentStart` for the same `session_id` is launched by a different parent PID, prior running runs for that session are treated as stale after a shutdown and automatically marked `stopped`. `PostToolUse` tracks `close_agent` and `resume_agent`, including Codex multi-agent v1 names such as `multi_agent_v1close_agent`, `multi_agent_v1__close_agent`, or `multi_agent_v1.close_agent`, which are the available signal for whether the parent closed or reopened a subagent thread.
+The command reads Codex JSON from stdin and writes `{}` to stdout so Codex can continue normally. `SubagentStart` and `SubagentStop` payloads are stored in full. The hook records its direct parent PID for diagnostics and records `hook_session_pid` from `CODEX_PID` when that environment variable is set to a valid PID, otherwise by recursively walking the hook process `ppid` chain until it finds the nearest Codex process. If a later `SubagentStart` for the same `session_id` comes from a different identified Codex session process, prior running runs for that session are treated as stale after a shutdown and automatically marked `stopped`. A direct hook parent PID change alone is not enough to mark runs stale, because hook commands can be launched through short-lived shell, npm, or `npx` wrapper processes. `PostToolUse` tracks `close_agent` and `resume_agent`, including Codex multi-agent v1 names such as `multi_agent_v1close_agent`, `multi_agent_v1__close_agent`, or `multi_agent_v1.close_agent`, which are the available signal for whether the parent closed or reopened a subagent thread.
 
 For a global install, put the same `hooks` block in `~/.codex/hooks.json`. On Windows this is typically:
 
@@ -163,7 +163,9 @@ npx -y subagent-auto-manager@latest --session 019e87b0-d695-7902-96e1-9672e0a12d
 
 With no list or filter arguments, JSON/YAML output returns only the summary and hides `runs`.
 
-With list or filter arguments, default JSON/YAML output keeps each run compact: `agentId`, `state`, and `stopReason` when the run is stopped. `--agent` filters by `agentId`, `subagentId`, full `runKey`, or `<session>:<agent-id>`. `stopReason` is `hook` for a recorded `SubagentStop` and `pid-change` when an older running row was marked stopped after the hook parent PID changed.
+With list or filter arguments, default JSON/YAML output keeps each run compact: `agentId`, `state`, and `stopReason` when the run is stopped. `--agent` filters by `agentId`, `subagentId`, full `runKey`, or `<session>:<agent-id>`. `stopReason` is `hook` for a recorded `SubagentStop` and `pid-change` when an older running row was marked stopped after the identified Codex session process changed.
+
+Rows stopped with `pid-change` are stale markers, not raw `SubagentStop` records. Full output keeps `stopPayload` as `null` for those rows.
 
 ```json
 {
@@ -216,7 +218,7 @@ Each project stores its ledger below:
 
 The CLI isolates sessions with `CODEX_THREAD_ID` by default. Hooks use the `session_id` from the Codex hook JSON.
 
-The database stores queryable columns for common Codex hook fields such as `session_id`, `hook_parent_pid`, `turn_id`, `agent_id`, `agent_type`, `cwd`, `model`, `permission_mode`, `transcript_path`, `agent_transcript_path`, `prompt`, `last_assistant_message`, `start_args_json`, `stop_hook_active`, `tool_name`, `tool_use_id`, and `close_target`, plus the complete raw payload JSON for every event. `start_args_json` is a compact JSON snapshot derived from `SubagentStart`: it keeps launch parameters such as agent type, model, reasoning effort, sandbox or approval settings, fork flags, custom fields, and prompt, while excluding lifecycle metadata such as hook event name, session id, turn id, and transcript paths.
+The database stores queryable columns for common Codex hook fields such as `session_id`, `hook_parent_pid`, `hook_session_pid`, `turn_id`, `agent_id`, `agent_type`, `cwd`, `model`, `permission_mode`, `transcript_path`, `agent_transcript_path`, `prompt`, `last_assistant_message`, `start_args_json`, `stop_hook_active`, `tool_name`, `tool_use_id`, and `close_target`, plus the complete raw payload JSON for every event. `start_args_json` is a compact JSON snapshot derived from `SubagentStart`: it keeps launch parameters such as agent type, model, reasoning effort, sandbox or approval settings, fork flags, custom fields, and prompt, while excluding lifecycle metadata such as hook event name, session id, turn id, and transcript paths.
 
 ## Publishing
 

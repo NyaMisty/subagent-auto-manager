@@ -4,7 +4,7 @@
 
 `subagent-auto-manager` records Codex subagent lifecycle hook payloads into a project-local SQLite ledger and exposes compact, medium, or full detail JSON/YAML CLI views by session. It also records state-changing `PostToolUse` calls for `close_agent` and `resume_agent` so closed thread state can be tracked separately from subagent turn completion. Unrelated `PostToolUse` calls are ignored.
 
-The hook records its parent PID. If a new `SubagentStart` for the same session comes from a different parent PID, prior running rows for that session are considered stale after parent shutdown and are automatically marked `stopped`.
+The hook records its direct parent PID for diagnostics and identifies the Codex session process PID from `CODEX_PID` when that environment variable is set to a valid PID. If `CODEX_PID` is absent or invalid, it recursively walks the hook process `ppid` chain until it finds the nearest Codex process. If a new `SubagentStart` for the same session comes from a different identified Codex session process, prior running rows for that session are considered stale after parent shutdown and are automatically marked `stopped`. A direct hook parent PID change alone does not mark rows stale because hook commands can run under short-lived shell, npm, or `npx` wrapper processes.
 
 ## Package Shape
 
@@ -32,7 +32,8 @@ The database stores:
 - one row per hook payload in `subagent_events`
 - one reconstructed run per subagent in `subagent_runs`
 - explicit columns for common Codex fields
-- `hook_parent_pid`, used to detect parent shutdown/restart for a session
+- `hook_parent_pid`, the direct hook parent process for diagnostics
+- `hook_session_pid`, the identified ancestor Codex session process used to detect parent shutdown/restart for a session
 - `start_args_json`, a compact launch-argument snapshot derived from `SubagentStart`
 - `closed`, `close_event_id`, `close_time`, and raw close payload fields for thread-close state
 - the complete compact raw payload JSON
@@ -41,9 +42,9 @@ The database stores:
 
 Hooks use the `session_id` field provided by Codex in the hook JSON.
 
-For hook-created starts, `hook_parent_pid` stores `process.ppid`. A PID change within the same `session_id` means the previous parent process has shut down, so old running runs are stopped before the new start is recorded.
+For hook-created starts, `hook_parent_pid` stores the direct parent process and `hook_session_pid` stores `CODEX_PID` or the nearest identified Codex ancestor process found by recursive `ppid` lookup. A `hook_session_pid` change within the same `session_id` means the previous Codex session process has shut down, so old running runs are stopped before the new start is recorded. If `hook_session_pid` cannot be identified, the hook does not auto-stop old running rows from PID changes.
 
-The CLI defaults to `CODEX_THREAD_ID`, running-only filtering, and pretty JSON. With no list/filter arguments it hides `runs` and returns summary only. With list/filter arguments it defaults to compact runs containing `agentId`, `state`, and `stopReason` for stopped or closed runs when available. `--agent` filters list/running output by `agentId`, `subagentId`, full `runKey`, or `<session>:<agent-id>`. `stopReason` is `hook` for a recorded `SubagentStop` and `pid-change` when a running row was marked stopped after the hook parent PID changed. It also accepts:
+The CLI defaults to `CODEX_THREAD_ID`, running-only filtering, and pretty JSON. With no list/filter arguments it hides `runs` and returns summary only. With list/filter arguments it defaults to compact runs containing `agentId`, `state`, and `stopReason` for stopped or closed runs when available. `--agent` filters list/running output by `agentId`, `subagentId`, full `runKey`, or `<session>:<agent-id>`. `stopReason` is `hook` for a recorded `SubagentStop` and `pid-change` when a running row was marked stopped after the identified Codex session process changed. It also accepts:
 
 ```sh
 npx -y subagent-auto-manager@latest --session <session-id> --cwd <project> --agent <agent-id>
