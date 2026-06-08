@@ -56,6 +56,7 @@ interface WaitResult {
     timeoutMs: number;
     elapsedMs: number;
   };
+  incompleteTargets: WaitTargetStatus[];
   targets: WaitTargetStatus[];
 }
 
@@ -586,6 +587,7 @@ function matchesRunTarget(run: SubagentRun, sessionId: string, target: string): 
 }
 
 function buildWaitResult(sessionId: string, targets: WaitTargetStatus[], timeoutMs: number, elapsedMs: number): WaitResult {
+  const incompleteTargets = targets.filter((target) => target.state !== "stopped");
   const stopped = targets.filter((target) => target.state === "stopped").length;
   const running = targets.filter((target) => target.state === "running").length;
   const missing = targets.filter((target) => target.state === "missing").length;
@@ -600,6 +602,7 @@ function buildWaitResult(sessionId: string, targets: WaitTargetStatus[], timeout
       timeoutMs,
       elapsedMs
     },
+    incompleteTargets,
     targets
   };
 }
@@ -611,9 +614,13 @@ function writeWaitProgress(targets: WaitTargetStatus[], reportedStopped: Set<str
     }
 
     reportedStopped.add(target.target);
-    const agentId = target.agentId ?? target.subagentId ?? target.target;
+    const agentId = target.agentId ?? target.subagentId;
+    if (!agentId) {
+      continue;
+    }
+
     const type = target.agentType ? ` type=${target.agentType}` : "";
-    process.stderr.write(`[subagent-auto-manager] wait stopped agentId=${agentId} target=${target.target}${type}\n`);
+    process.stderr.write(`[subagent-auto-manager] wait stopped agentId=${agentId}${type}\n`);
   }
 }
 
@@ -635,16 +642,16 @@ function formatWaitResult(result: WaitResult): string {
   const summary = result.summary;
   const lines = [
     summary.complete
-      ? `wait complete session=${short(summary.sessionId)} targets=${summary.total} elapsed_ms=${summary.elapsedMs}`
-      : `wait timeout session=${short(summary.sessionId)} targets=${summary.total} stopped=${summary.stopped} running=${summary.running} missing=${summary.missing} elapsed_ms=${summary.elapsedMs} timeout_ms=${summary.timeoutMs}`
+      ? `wait complete session=${summary.sessionId} targets=${summary.total} elapsed_ms=${summary.elapsedMs}`
+      : `wait timeout session=${summary.sessionId} targets=${summary.total} stopped=${summary.stopped} running=${summary.running} missing=${summary.missing} elapsed_ms=${summary.elapsedMs} timeout_ms=${summary.timeoutMs}`
   ];
 
-  const visibleTargets = summary.complete ? result.targets : result.targets.filter((target) => target.state !== "stopped");
+  const visibleTargets = summary.complete ? result.targets : result.incompleteTargets;
   for (const target of visibleTargets) {
     const label = target.state === "stopped" ? "DONE" : target.state === "running" ? "RUN" : "MISS";
     const name = target.agentId ?? target.subagentId ?? target.target;
     const type = target.agentType ? ` ${target.agentType}` : "";
-    lines.push(`${label} ${short(name)}${type}`);
+    lines.push(`${label} ${name}${type}`);
   }
 
   return `${lines.join("\n")}\n`;
@@ -661,10 +668,6 @@ function uniqueStrings(values: string[]): string[] {
     result.push(value);
   }
   return result;
-}
-
-function short(value: string): string {
-  return value.length <= 8 ? value : value.slice(0, 8);
 }
 
 function delay(ms: number): Promise<void> {
@@ -741,7 +744,7 @@ Defaults:
   Status defaults to running. Use --status stopped to list stopped agent ids.
   Broad all/closed listing and --after-timestamp are manual debugging queries.
   reset marks stopped, not-closed agents as closed. reset --full --human marks running and stopped, not-closed agents as closed. With --agent and --human, reset clears one closed mark for manual debugging.
-  wait polls the hook ledger until every target is stopped. During polling, newly stopped targets stream to stderr. With no explicit targets, wait snapshots current running, not-closed agents.
+  wait polls the hook ledger until every target is stopped. During polling, newly stopped agent ids stream to stderr. With no explicit targets, wait snapshots current running, not-closed agents.
 
 Hook config command:
   npx -y subagent-auto-manager@latest hook

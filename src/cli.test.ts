@@ -439,6 +439,7 @@ test("wait returns when every target is stopped", async () => {
     assert.equal(parsed.summary.stopped, 2);
     assert.equal(parsed.summary.running, 0);
     assert.equal(parsed.summary.missing, 0);
+    assert.deepEqual(parsed.incompleteTargets, []);
     assert.deepEqual(
       parsed.targets.map((target: { target: string; state: string }) => [target.target, target.state]),
       [
@@ -451,7 +452,7 @@ test("wait returns when every target is stopped", async () => {
   }
 });
 
-test("wait streams each newly stopped target to stderr", async () => {
+test("wait streams each newly stopped agent id to stderr", async () => {
   const root = tempRoot();
   seedRun(root, "session-wait-stream", "running", "agent-stream");
   let child: ReturnType<typeof spawn> | null = null;
@@ -483,7 +484,7 @@ test("wait streams each newly stopped target to stderr", async () => {
 
     await delay(150);
     stopRun(root, "session-wait-stream", "agent-stream");
-    await waitForText(() => stderr, "wait stopped agentId=agent-stream target=agent-stream");
+    await waitForText(() => stderr, "wait stopped agentId=agent-stream");
     const exitCode = await exit;
 
     assert.equal(exitCode, 0, stderr);
@@ -491,7 +492,8 @@ test("wait streams each newly stopped target to stderr", async () => {
     assert.equal(parsed.summary.complete, true);
     assert.equal(parsed.summary.stopped, 1);
     assert.equal(parsed.targets[0].state, "stopped");
-    assert.match(stderr, /\[subagent-auto-manager\] wait stopped agentId=agent-stream target=agent-stream type=explorer/);
+    assert.match(stderr, /\[subagent-auto-manager\] wait stopped agentId=agent-stream type=explorer/);
+    assert.doesNotMatch(stderr, /target=/);
   } finally {
     if (child && child.exitCode === null && !child.killed) {
       child.kill();
@@ -505,15 +507,52 @@ test("wait times out for running or missing targets", async () => {
   seedRun(root, "session-wait-timeout", "running", "agent-running");
   seedRun(root, "session-wait-timeout", "stopped", "agent-done");
   const result = runCli(
-    ["wait", "agent-running", "agent-missing", "--cwd", root, "--timeout-ms", "0", "--text"],
+    ["wait", "agent-running", "agent-done", "agent-missing", "--cwd", root, "--timeout-ms", "0", "--text"],
     { CODEX_THREAD_ID: "session-wait-timeout" },
     1
   );
 
   try {
-    assert.match(result.stdout, /^wait timeout session=session- targets=2 stopped=0 running=1 missing=1 /);
-    assert.match(result.stdout, /RUN agent-ru explorer/);
-    assert.match(result.stdout, /MISS agent-mi/);
+    assert.match(result.stdout, /^wait timeout session=session-wait-timeout targets=3 stopped=1 running=1 missing=1 /);
+    assert.match(result.stdout, /RUN agent-running explorer/);
+    assert.match(result.stdout, /MISS agent-missing/);
+    assert.equal(result.stdout.includes("DONE agent-done"), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("wait timeout JSON exposes incomplete targets and exits non-zero", async () => {
+  const root = tempRoot();
+  seedRun(root, "session-wait-timeout-json", "running", "agent-running");
+  seedRun(root, "session-wait-timeout-json", "stopped", "agent-done");
+  const result = runCli(
+    ["wait", "agent-running", "agent-done", "agent-missing", "--cwd", root, "--timeout-ms", "0"],
+    { CODEX_THREAD_ID: "session-wait-timeout-json" },
+    1
+  );
+
+  try {
+    const parsed = JSON.parse(result.stdout);
+    assert.equal(parsed.summary.complete, false);
+    assert.equal(parsed.summary.stopped, 1);
+    assert.equal(parsed.summary.running, 1);
+    assert.equal(parsed.summary.missing, 1);
+    assert.deepEqual(
+      parsed.incompleteTargets.map((target: { target: string; state: string }) => [target.target, target.state]),
+      [
+        ["agent-running", "running"],
+        ["agent-missing", "missing"]
+      ]
+    );
+    assert.deepEqual(
+      parsed.targets.map((target: { target: string; state: string }) => [target.target, target.state]),
+      [
+        ["agent-running", "running"],
+        ["agent-done", "stopped"],
+        ["agent-missing", "missing"]
+      ]
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

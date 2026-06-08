@@ -7,7 +7,7 @@ export interface FormatOptions {
 
 export function formatSession(summary: SessionSummary, runs: SubagentRun[], options: FormatOptions = {}): string {
   const lines = [
-    `session ${short(summary.sessionId)} total=${summary.total} running=${summary.running} stopped=${summary.stopped} closed=${summary.closed}`
+    `session ${summary.sessionId} total=${summary.total} running=${summary.running} stopped=${summary.stopped} closed=${summary.closed}`
   ];
 
   if (runs.length === 0) {
@@ -22,7 +22,7 @@ export function formatSession(summary: SessionSummary, runs: SubagentRun[], opti
     const status = state === "closed" ? "CLOSED" : state === "running" ? "RUN" : "DONE";
     const elapsed = elapsedLabel(run, options.now ?? new Date());
     const prompt = run.prompt ? ` ${truncate(oneLine(run.prompt), 72)}` : "";
-    lines.push(`${status} ${short(name)}${type} ${elapsed}${prompt}`);
+    lines.push(`${status} ${name}${type} ${elapsed}${prompt}`);
   }
 
   return `${lines.join("\n")}\n`;
@@ -54,10 +54,6 @@ export function formatDuration(ms: number): string {
   const hours = Math.floor(minutes / 60);
   const restMinutes = minutes % 60;
   return restMinutes === 0 ? `${hours}h` : `${hours}h${restMinutes}m`;
-}
-
-function short(value: string): string {
-  return value.length <= 12 ? value : value.slice(0, 8);
 }
 
 function oneLine(value: string): string {
