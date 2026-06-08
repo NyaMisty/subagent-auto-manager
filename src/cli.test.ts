@@ -50,14 +50,14 @@ test("filter output defaults to compact agent id and state", async () => {
       parsed.runs.map((run: Record<string, unknown>) => Object.keys(run)),
       [
         ["agentId", "state"],
-        ["agentId", "state"]
+        ["agentId", "state", "stopReason"]
       ]
     );
     assert.deepEqual(
-      parsed.runs.map((run: { agentId: string; state: string }) => [run.agentId, run.state]).sort(),
+      parsed.runs.map((run: { agentId: string; state: string; stopReason?: string }) => [run.agentId, run.state, run.stopReason ?? null]).sort(),
       [
-        ["agent-1", "running"],
-        ["agent-stopped", "stopped"]
+        ["agent-1", "running", null],
+        ["agent-stopped", "stopped", "hook"]
       ]
     );
     assert.match(result.stderr, /filter=all format=json detail=compact session=session-compact shown=2\/2/);
@@ -81,6 +81,7 @@ test("supports explicit medium JSON list output", async () => {
       "prompt",
       "startTime",
       "stopTime",
+      "stopReason",
       "closeTime",
       "durationMs",
       "lastAssistantMessage",
@@ -209,8 +210,48 @@ test("filters stopped agents explicitly", async () => {
     assert.equal(parsed.summary.shown, 1);
     assert.equal(parsed.runs[0].agentId, "agent-stopped");
     assert.equal(parsed.runs[0].state, "stopped");
-    assert.deepEqual(Object.keys(parsed.runs[0]), ["agentId", "state"]);
+    assert.equal(parsed.runs[0].stopReason, "hook");
+    assert.deepEqual(Object.keys(parsed.runs[0]), ["agentId", "state", "stopReason"]);
     assert.match(result.stderr, /filter=stopped format=json detail=compact/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("filters list output by agent id", async () => {
+  const root = tempRoot();
+  seedRun(root, "session-agent-filter", "running", "agent-target");
+  seedRun(root, "session-agent-filter", "running", "agent-other");
+  seedRun(root, "session-agent-filter", "stopped", "agent-done");
+  const byAgent = runCli(["--cwd", root, "--agent", "agent-target"], { CODEX_THREAD_ID: "session-agent-filter" });
+  const byRunKey = runCli(["--cwd", root, "--agent", "session-agent-filter:agent-done", "--status", "all", "--human"], {
+    CODEX_THREAD_ID: "session-agent-filter"
+  });
+
+  try {
+    const parsed = JSON.parse(byAgent.stdout);
+    assert.equal(parsed.summary.running, 2);
+    assert.equal(parsed.summary.stopped, 1);
+    assert.equal(parsed.summary.total, 3);
+    assert.equal(parsed.summary.shown, 1);
+    assert.deepEqual(parsed.runs, [
+      {
+        agentId: "agent-target",
+        state: "running"
+      }
+    ]);
+    assert.match(byAgent.stderr, /filter=running format=json detail=compact session=session-agent-filter agent=agent-target shown=1\/3/);
+
+    const runKeyParsed = JSON.parse(byRunKey.stdout);
+    assert.equal(runKeyParsed.summary.shown, 1);
+    assert.deepEqual(runKeyParsed.runs, [
+      {
+        agentId: "agent-done",
+        state: "stopped",
+        stopReason: "hook"
+      }
+    ]);
+    assert.match(byRunKey.stderr, /agent=session-agent-filter:agent-done shown=1\/3/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -231,6 +272,14 @@ test("CLI running output excludes stale runs auto-stopped after hook parent pid 
       {
         agentId: "agent-current",
         state: "running"
+      }
+    ]);
+    const stopped = runCli(["--cwd", root, "--stopped"], { CODEX_THREAD_ID: "session-parent-pid" });
+    assert.deepEqual(JSON.parse(stopped.stdout).runs, [
+      {
+        agentId: "agent-stale",
+        state: "stopped",
+        stopReason: "pid-change"
       }
     ]);
   } finally {
@@ -266,8 +315,11 @@ test("filters closed agents, closes stopped runs by reset, and clears one closed
     assert.equal(parsed.summary.closed, 2);
     assert.equal(parsed.summary.shown, 2);
     assert.deepEqual(
-      parsed.runs.map((run: { agentId: string }) => run.agentId).sort(),
-      ["agent-closed", "agent-running-closed"]
+      parsed.runs.map((run: { agentId: string; stopReason?: string }) => [run.agentId, run.stopReason ?? null]).sort(),
+      [
+        ["agent-closed", "hook"],
+        ["agent-running-closed", null]
+      ]
     );
     assert.equal(parsed.runs.every((run: { state: string }) => run.state === "closed"), true);
     assert.equal(parsed.runs.some((run: Record<string, unknown>) => "closed" in run), false);
@@ -404,7 +456,12 @@ test("after-timestamp lists all agent statuses started after the Unix timestamp"
     );
     assert.equal(parsed.runs.some((run: { agentId: string; state: string }) => run.agentId === "agent-closed-after" && run.state === "closed"), true);
     assert.equal(parsed.runs.some((run: { agentId: string; state: string }) => run.agentId === "agent-stopped-after" && run.state === "stopped"), true);
-    assert.equal(parsed.runs.every((run: Record<string, unknown>) => Object.keys(run).join(",") === "agentId,state"), true);
+    assert.equal(
+      parsed.runs.every((run: Record<string, unknown>) =>
+        run.agentId === "agent-stopped-after" ? Object.keys(run).join(",") === "agentId,state,stopReason" : Object.keys(run).join(",") === "agentId,state"
+      ),
+      true
+    );
     assert.match(result.stderr, /filter=all/);
     assert.match(result.stderr, new RegExp(`after_timestamp=${threshold}`));
   } finally {

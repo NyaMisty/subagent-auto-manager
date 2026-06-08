@@ -85,6 +85,12 @@ List currently running subagent ids:
 npx -y subagent-auto-manager@latest --running
 ```
 
+Filter list output to one subagent:
+
+```sh
+npx -y subagent-auto-manager@latest --agent 019e87b0-d695-7902-96e1-9672e0a12db6
+```
+
 List only stopped, not-closed subagents:
 
 ```sh
@@ -157,7 +163,7 @@ npx -y subagent-auto-manager@latest --session 019e87b0-d695-7902-96e1-9672e0a12d
 
 With no list or filter arguments, JSON/YAML output returns only the summary and hides `runs`.
 
-With list or filter arguments, default JSON/YAML output keeps each run compact: only `agentId` and `state`.
+With list or filter arguments, default JSON/YAML output keeps each run compact: `agentId`, `state`, and `stopReason` when the run is stopped. `--agent` filters by `agentId`, `subagentId`, full `runKey`, or `<session>:<agent-id>`. `stopReason` is `hook` for a recorded `SubagentStop` and `pid-change` when an older running row was marked stopped after the hook parent PID changed.
 
 ```json
 {
@@ -172,6 +178,11 @@ With list or filter arguments, default JSON/YAML output keeps each run compact: 
     {
       "agentId": "agent-running",
       "state": "running"
+    },
+    {
+      "agentId": "agent-stopped",
+      "state": "stopped",
+      "stopReason": "hook"
     }
   ]
 }

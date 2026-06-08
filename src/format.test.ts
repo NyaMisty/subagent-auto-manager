@@ -21,7 +21,7 @@ test("formats optional compact human-readable session output", () => {
     [
       "session 019e87b0-d695-7902-96e1-9672e0a12db6 total=2 running=1 stopped=0 closed=1",
       "Pending agent-running general 3s review files and report issues",
-      "Closed agent-stopped general 2s",
+      "Closed agent-stopped general 2s stop=hook",
       ""
     ].join("\n")
   );

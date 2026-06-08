@@ -176,6 +176,8 @@ Every stored payload is also stored as compact raw JSON in `payload_json`, so ne
 
 `SubagentStop` means the subagent turn ended. It does not prove that the parent closed the agent thread.
 
+List output exposes `stopReason` for stopped and closed rows when available. `hook` means a real `SubagentStop` hook row was recorded. `pid-change` means a running row was marked stopped because a later `SubagentStart` for the same session came from a different hook parent PID.
+
 Closed state is inferred from `PostToolUse`. Configure `PostToolUse` with `(close_agent|resume_agent)$` so Codex forwards bare names and namespaced tool-name variants.
 
 - `close_agent` with `tool_input.target` and a successful response marks that target `closed`.

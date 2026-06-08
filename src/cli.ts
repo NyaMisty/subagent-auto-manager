@@ -130,7 +130,7 @@ export async function main(argv = process.argv.slice(2), env = process.env): Pro
     }
 
     const summary = ledger.summary(sessionId);
-    const runs = filterRuns(ledger.listSession(sessionId, true), options.status, options.afterTimestamp);
+    const runs = filterRuns(ledger.listSession(sessionId, true), sessionId, options.status, options.afterTimestamp, options.agent);
     const detail = effectiveDetail(options);
     const result = buildOutput(summary, runs, detail);
     if (options.output === "json") {
@@ -359,6 +359,7 @@ function parseArgs(argv: string[]): CliOptions {
       }
       options.agent = value;
       options.waitTargets.push(value);
+      options.hasListFilter = true;
       index += 1;
       continue;
     }
@@ -369,6 +370,7 @@ function parseArgs(argv: string[]): CliOptions {
         const value = arg.slice(prefix.length);
         options.agent = value;
         options.waitTargets.push(value);
+        options.hasListFilter = true;
         parsedAgent = true;
         break;
       }
@@ -696,20 +698,24 @@ function delay(ms: number): Promise<void> {
 
 function filterRuns(
   runs: SubagentRun[],
+  sessionId: string,
   status: "running" | "stopped" | "closed" | "all",
-  afterTimestamp?: number
+  afterTimestamp?: number,
+  agent?: string
 ): SubagentRun[] {
   const statusFiltered =
     status === "all"
       ? runs
       : runs.filter((run) => publicRunState(run) === status);
 
+  const agentFiltered = agent === undefined ? statusFiltered : statusFiltered.filter((run) => matchesRunTarget(run, sessionId, agent));
+
   if (afterTimestamp === undefined) {
-    return statusFiltered;
+    return agentFiltered;
   }
 
   const afterMs = afterTimestamp * 1000;
-  return statusFiltered.filter((run) => new Date(run.startTime).getTime() > afterMs);
+  return agentFiltered.filter((run) => new Date(run.startTime).getTime() > afterMs);
 }
 
 function writeHints(
@@ -728,6 +734,9 @@ function writeHints(
   if (options.afterTimestamp !== undefined) {
     pieces.push(`after_timestamp=${options.afterTimestamp}`);
   }
+  if (options.agent !== undefined && (options.command === "running" || options.command === "list")) {
+    pieces.push(`agent=${options.agent}`);
+  }
   process.stderr.write(`[subagent-auto-manager] ${pieces.join(" ")} shown=${shown}/${total}\n`);
 
   const base = "npx -y subagent-auto-manager@latest";
@@ -744,7 +753,7 @@ function writeHints(
 
 function helpText(): string {
   return `Usage:
-  subagent-auto-manager [running|list] [--session <id>] [--cwd <project>] [--status running|stopped|closed|all] [--after-timestamp <unix-seconds>] [--json|--yaml|--text] [--detail medium|full]
+  subagent-auto-manager [running|list] [--session <id>] [--cwd <project>] [--agent <id>] [--status running|stopped|closed|all] [--after-timestamp <unix-seconds>] [--json|--yaml|--text] [--detail medium|full]
   subagent-auto-manager reset [--full --human] [--agent <id> --human] [--session <id>] [--cwd <project>] [--json|--yaml|--text]
   subagent-auto-manager wait [agent-id ...] [--all] [--timeout-ms <ms>] [--interval-ms <ms>] [--session <id>] [--cwd <project>] [--json|--yaml|--text]
   subagent-auto-manager hook
@@ -756,8 +765,9 @@ Defaults:
   Detail defaults to summary with no list/filter arguments, and compact for list/filter arguments.
   Use --medium for recall fields, or --full/--detail full for all stored fields and raw payloads.
   With no list/filter arguments, JSON/YAML output hides runs and returns only summary.
-  With list/filter arguments, default JSON/YAML runs include only agentId and state.
+  With list/filter arguments, default JSON/YAML runs include agentId, state, and stopReason when stopped.
   Status defaults to running. Use --status stopped to list stopped agent ids.
+  --agent filters list/running output by agentId, subagentId, runKey, or <session>:<agent-id>.
   Broad all/closed listing and --after-timestamp are manual debugging queries.
   reset marks stopped, not-closed agents as closed. reset --full --human marks running and stopped, not-closed agents as closed. With --agent and --human, reset clears one closed mark for manual debugging.
   wait polls the hook ledger until every target is stopped. During polling, newly stopped agent ids stream to stderr. With no explicit targets, wait snapshots current running, not-closed agents.

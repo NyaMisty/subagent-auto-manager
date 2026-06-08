@@ -540,6 +540,8 @@ test("auto-stops prior running subagents when hook parent pid changes in the sam
     const previous = runs.find((run) => run.agentId === "agent-before-shutdown");
     const current = runs.find((run) => run.agentId === "agent-after-shutdown");
     assert.equal(previous?.status, "stopped");
+    assert.equal(previous?.stopEventId, null);
+    assert.equal(previous?.stopPayload, null);
     assert.equal(previous?.hookParentPid, 100);
     assert.notEqual(previous?.stopTime, null);
     assert.equal(current?.status, "running");

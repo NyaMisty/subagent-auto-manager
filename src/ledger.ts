@@ -740,7 +740,6 @@ export class SubagentLedger {
             SET status = 'stopped',
                 stop_time = ?,
                 duration_ms = MAX(0, CAST((julianday(?) - julianday(start_time)) * 86400000 AS INTEGER)),
-                stop_payload = COALESCE(stop_payload, start_payload),
                 updated_at = ?
           WHERE session_id = ?
             AND status = 'running'

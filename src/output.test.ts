@@ -16,14 +16,15 @@ test("summary output omits runs", () => {
   assert.equal("runs" in output, false);
 });
 
-test("compact output keeps only agent id and state", () => {
+test("compact output keeps agent id, state, and stop reason when stopped", () => {
   const output = buildOutput(summary(), [run()], "compact");
   const [item] = output.runs as Record<string, unknown>[];
 
-  assert.deepEqual(Object.keys(item), ["agentId", "state"]);
+  assert.deepEqual(Object.keys(item), ["agentId", "state", "stopReason"]);
   assert.deepEqual(item, {
     agentId: "agent-1",
-    state: "closed"
+    state: "closed",
+    stopReason: "hook"
   });
 });
 
@@ -45,6 +46,7 @@ test("medium output keeps common recall and stats fields", () => {
     "prompt",
     "startTime",
     "stopTime",
+    "stopReason",
     "closeTime",
     "durationMs",
     "lastAssistantMessage",
@@ -54,6 +56,7 @@ test("medium output keeps common recall and stats fields", () => {
   ]);
   assert.equal(item.agentId, "agent-1");
   assert.equal(item.state, "closed");
+  assert.equal(item.stopReason, "hook");
   assert.equal(item.prompt, "inspect package.json");
   assert.deepEqual(item.startArgs, {
     agent_id: "agent-1",

@@ -21,6 +21,9 @@ npx -y subagent-auto-manager@latest wait --timeout-ms 600000 --text
 # 4. Get stopped agent ids only.
 npx -y subagent-auto-manager@latest --status stopped
 
+# Optional: narrow running output to one known agent id.
+npx -y subagent-auto-manager@latest --agent <agent-id>
+
 # 5. Gather each stopped agent with Codex built-in tools, then close_agent when done.
 ```
 
@@ -50,8 +53,8 @@ Filtered output returns only:
     "shown": 12
   },
   "runs": [
-    { "agentId": "agent-a", "state": "stopped" },
-    { "agentId": "agent-b", "state": "stopped" }
+    { "agentId": "agent-a", "state": "stopped", "stopReason": "hook" },
+    { "agentId": "agent-b", "state": "stopped", "stopReason": "pid-change" }
   ]
 }
 ```
@@ -69,6 +72,8 @@ Text labels:
 `Pending`: the target has a ledger row from `SubagentStart`, but no `SubagentStop` has been recorded yet; it started and has not returned.
 
 `Stopped`: the target has emitted `SubagentStop`, or was marked stale after parent restart.
+
+`stopReason`: `hook` means `SubagentStop` was recorded. `pid-change` means the row was auto-marked stopped because a later start for the same session came from a different hook parent PID.
 
 `Miss`: a requested wait target did not match any ledger row; there is no recorded start for that target in this session/project ledger.
 

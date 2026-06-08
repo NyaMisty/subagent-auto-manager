@@ -43,9 +43,10 @@ Hooks use the `session_id` field provided by Codex in the hook JSON.
 
 For hook-created starts, `hook_parent_pid` stores `process.ppid`. A PID change within the same `session_id` means the previous parent process has shut down, so old running runs are stopped before the new start is recorded.
 
-The CLI defaults to `CODEX_THREAD_ID`, running-only filtering, and pretty JSON. With no list/filter arguments it hides `runs` and returns summary only. With list/filter arguments it defaults to compact runs containing only `agentId` and `state`. It also accepts:
+The CLI defaults to `CODEX_THREAD_ID`, running-only filtering, and pretty JSON. With no list/filter arguments it hides `runs` and returns summary only. With list/filter arguments it defaults to compact runs containing `agentId`, `state`, and `stopReason` for stopped or closed runs when available. `--agent` filters list/running output by `agentId`, `subagentId`, full `runKey`, or `<session>:<agent-id>`. `stopReason` is `hook` for a recorded `SubagentStop` and `pid-change` when a running row was marked stopped after the hook parent PID changed. It also accepts:
 
 ```sh
+npx -y subagent-auto-manager@latest --session <session-id> --cwd <project> --agent <agent-id>
 npx -y subagent-auto-manager@latest --session <session-id> --cwd <project> --status stopped
 npx -y subagent-auto-manager@latest --session <session-id> --cwd <project> --status all --yaml --full --human
 npx -y subagent-auto-manager@latest --session <session-id> --cwd <project> --after-timestamp <unix-seconds> --human

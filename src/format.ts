@@ -1,5 +1,5 @@
 import type { SessionSummary, SubagentRun } from "./types.js";
-import { publicRunState } from "./state.js";
+import { publicRunState, stopReason } from "./state.js";
 
 export interface FormatOptions {
   now?: Date;
@@ -21,8 +21,10 @@ export function formatSession(summary: SessionSummary, runs: SubagentRun[], opti
     const state = publicRunState(run);
     const status = state === "closed" ? "Closed" : state === "running" ? "Pending" : "Stopped";
     const elapsed = elapsedLabel(run, options.now ?? new Date());
+    const reason = stopReason(run);
+    const reasonLabel = reason === null ? "" : ` stop=${reason}`;
     const prompt = run.prompt ? ` ${truncate(oneLine(run.prompt), 72)}` : "";
-    lines.push(`${status} ${name}${type} ${elapsed}${prompt}`);
+    lines.push(`${status} ${name}${type} ${elapsed}${reasonLabel}${prompt}`);
   }
 
   return `${lines.join("\n")}\n`;

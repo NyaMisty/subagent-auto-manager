@@ -1,5 +1,5 @@
 import type { SessionSummary, SubagentRun } from "./types.js";
-import { publicRunState } from "./state.js";
+import { publicRunState, stopReason } from "./state.js";
 
 export type DetailLevel = "summary" | "compact" | "medium" | "full";
 
@@ -45,6 +45,7 @@ function mediumRun(run: SubagentRun): Record<string, unknown> {
     prompt: run.prompt,
     startTime: run.startTime,
     stopTime: run.stopTime,
+    stopReason: stopReason(run),
     closeTime: run.closeTime,
     durationMs: run.durationMs,
     lastAssistantMessage: run.lastAssistantMessage,
@@ -55,10 +56,17 @@ function mediumRun(run: SubagentRun): Record<string, unknown> {
 }
 
 function compactRun(run: SubagentRun): Record<string, unknown> {
-  return {
+  const output: Record<string, unknown> = {
     agentId: run.agentId ?? run.subagentId,
     state: run.closed ? "closed" : run.status
   };
+
+  const reason = stopReason(run);
+  if (reason !== null) {
+    output.stopReason = reason;
+  }
+
+  return output;
 }
 
 function fullRun(run: SubagentRun): Record<string, unknown> {
@@ -66,6 +74,7 @@ function fullRun(run: SubagentRun): Record<string, unknown> {
   return {
     ...publicRun,
     state: publicRunState(run),
+    stopReason: stopReason(run),
     startArgs: run.startArgs === null ? null : parsePayload(run.startArgs),
     startPayload: parsePayload(run.startPayload),
     stopPayload: run.stopPayload === null ? null : parsePayload(run.stopPayload),
