@@ -292,6 +292,60 @@ test("filters closed agents, closes stopped runs by reset, and clears one closed
   }
 });
 
+test("reset --full closes running and stopped runs", async () => {
+  const root = tempRoot();
+  seedRun(root, "session-reset-full", "running", "agent-running");
+  seedRun(root, "session-reset-full", "stopped", "agent-stopped");
+  seedRun(root, "session-reset-full", "stopped", "agent-already-closed");
+  closeRun(root, "session-reset-full", "agent-already-closed");
+
+  const needsHuman = runCli(["reset", "--full", "--cwd", root, "--text"], {
+    CODEX_THREAD_ID: "session-reset-full"
+  }, 1);
+  const result = runCli(["reset", "--full", "--human", "--cwd", root, "--text"], {
+    CODEX_THREAD_ID: "session-reset-full"
+  });
+  const running = runCli(["--cwd", root], { CODEX_THREAD_ID: "session-reset-full" });
+  const closed = runCli(["--cwd", root, "--closed", "--human"], { CODEX_THREAD_ID: "session-reset-full" });
+
+  try {
+    assert.match(needsHuman.stderr, /reset --full requires --human/);
+    assert.equal(result.stdout, "reset full session=session-reset-full matched=2 closed=2\n");
+    assert.deepEqual(JSON.parse(running.stdout).runs, []);
+    const parsed = JSON.parse(closed.stdout);
+    assert.equal(parsed.summary.running, 0);
+    assert.equal(parsed.summary.stopped, 0);
+    assert.equal(parsed.summary.closed, 3);
+    assert.equal(parsed.summary.total, 3);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("reset full mode only accepts reset --full order", async () => {
+  const root = tempRoot();
+  seedRun(root, "session-reset-full-order", "running", "agent-running");
+
+  const before = runCli(["--full", "reset", "--cwd", root, "--text"], {
+    CODEX_THREAD_ID: "session-reset-full-order"
+  }, 1);
+  const all = runCli(["reset", "--all", "--cwd", root, "--text"], {
+    CODEX_THREAD_ID: "session-reset-full-order"
+  }, 1);
+  const detail = runCli(["reset", "--detail", "full", "--cwd", root, "--text"], {
+    CODEX_THREAD_ID: "session-reset-full-order"
+  }, 1);
+
+  try {
+    assert.match(before.stderr, /reset --full must be passed after reset/);
+    assert.match(all.stderr, /reset full mode must use reset --full/);
+    assert.match(detail.stderr, /reset full mode must use reset --full/);
+    assert.equal(JSON.parse(runCli(["--cwd", root], { CODEX_THREAD_ID: "session-reset-full-order" }).stdout).summary.running, 1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("requires human override for broad and closed list queries", async () => {
   const root = tempRoot();
   seedRun(root, "session-human", "running");

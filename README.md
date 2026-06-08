@@ -119,6 +119,12 @@ Mark all stopped, not-closed subagents as closed:
 npx -y subagent-auto-manager@latest reset
 ```
 
+Mark all running and stopped, not-closed subagents as closed:
+
+```sh
+npx -y subagent-auto-manager@latest reset --full --human
+```
+
 Clear one closed mark for manual debugging:
 
 ```sh

@@ -18,11 +18,13 @@ interface CliOptions {
   agent?: string;
   waitTargets: string[];
   waitAllRunning: boolean;
+  resetFull: boolean;
   timeoutMs: number;
   intervalMs: number;
   output: "json" | "yaml" | "text";
   detail: DetailLevel;
   detailExplicit: boolean;
+  fullBeforeReset: boolean;
   hasListFilter: boolean;
   status: "running" | "stopped" | "closed" | "all";
   afterTimestamp?: number;
@@ -93,6 +95,16 @@ export async function main(argv = process.argv.slice(2), env = process.env): Pro
         } else {
           process.stdout.write(`reset closed session=${sessionId} agent=${options.agent} matched=${result.matched} reset=${result.reset}\n`);
         }
+      } else if (options.resetFull) {
+        const result = ledger.closeAllOpen(sessionId);
+        const output = { sessionId, agentId: null, mode: "full", ...result };
+        if (options.output === "json") {
+          process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
+        } else if (options.output === "yaml") {
+          process.stdout.write(toYaml(output));
+        } else {
+          process.stdout.write(`reset full session=${sessionId} matched=${result.matched} closed=${result.closed}\n`);
+        }
       } else {
         const result = ledger.closeStopped(sessionId);
         const output = { sessionId, agentId: null, ...result };
@@ -138,11 +150,13 @@ function parseArgs(argv: string[]): CliOptions {
     command: "running",
     waitTargets: [],
     waitAllRunning: false,
+    resetFull: false,
     timeoutMs: 30000,
     intervalMs: 1000,
     output: "json",
     detail: "medium",
     detailExplicit: false,
+    fullBeforeReset: false,
     hasListFilter: false,
     status: "running",
     human: false
@@ -151,6 +165,9 @@ function parseArgs(argv: string[]): CliOptions {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "list" || arg === "running" || arg === "reset" || arg === "wait" || arg === "hook") {
+      if (arg === "reset" && options.detail === "full" && options.detailExplicit) {
+        options.fullBeforeReset = true;
+      }
       options.command = arg;
       if (arg === "list") {
         options.status = "all";
@@ -196,6 +213,8 @@ function parseArgs(argv: string[]): CliOptions {
     if (arg === "--all") {
       if (options.command === "wait") {
         options.waitAllRunning = true;
+      } else if (options.command === "reset") {
+        throw new Error("reset full mode must use reset --full");
       } else {
         options.status = "all";
         options.hasListFilter = true;
@@ -261,18 +280,28 @@ function parseArgs(argv: string[]): CliOptions {
     }
 
     if (arg === "--medium") {
+      if (options.command === "reset") {
+        throw new Error("reset does not support --medium");
+      }
       options.detail = "medium";
       options.detailExplicit = true;
       continue;
     }
 
     if (arg === "--full") {
+      if (options.command === "reset") {
+        options.resetFull = true;
+        continue;
+      }
       options.detail = "full";
       options.detailExplicit = true;
       continue;
     }
 
     if (arg === "--detail") {
+      if (options.command === "reset") {
+        throw new Error("reset full mode must use reset --full");
+      }
       const value = argv[index + 1];
       if (!value) {
         throw new Error("--detail requires a value");
@@ -284,6 +313,9 @@ function parseArgs(argv: string[]): CliOptions {
     }
 
     if (arg.startsWith("--detail=")) {
+      if (options.command === "reset") {
+        throw new Error("reset full mode must use reset --full");
+      }
       options.detail = parseDetail(arg.slice("--detail=".length));
       options.detailExplicit = true;
       continue;
@@ -405,6 +437,18 @@ function parseArgs(argv: string[]): CliOptions {
 function enforceHumanOverride(options: CliOptions): void {
   if (options.command === "reset" && options.agent && !options.human) {
     throw new Error("reset --agent requires --human and is intended for manual debugging");
+  }
+
+  if (options.command === "reset" && options.resetFull && !options.human) {
+    throw new Error("reset --full requires --human and is intended for manual debugging");
+  }
+
+  if (options.command === "reset" && options.fullBeforeReset) {
+    throw new Error("reset --full must be passed after reset");
+  }
+
+  if (options.command === "reset" && options.agent && options.resetFull) {
+    throw new Error("reset --full cannot be combined with --agent");
   }
 
   if (options.human || (options.command !== "running" && options.command !== "list")) {
@@ -682,7 +726,7 @@ function writeHints(
 function helpText(): string {
   return `Usage:
   subagent-auto-manager [running|list] [--session <id>] [--cwd <project>] [--status running|stopped|closed|all] [--after-timestamp <unix-seconds>] [--json|--yaml|--text] [--detail medium|full]
-  subagent-auto-manager reset [--agent <id> --human] [--session <id>] [--cwd <project>] [--json|--yaml|--text]
+  subagent-auto-manager reset [--full --human] [--agent <id> --human] [--session <id>] [--cwd <project>] [--json|--yaml|--text]
   subagent-auto-manager wait [agent-id ...] [--all] [--timeout-ms <ms>] [--interval-ms <ms>] [--session <id>] [--cwd <project>] [--json|--yaml|--text]
   subagent-auto-manager hook
 
@@ -696,7 +740,7 @@ Defaults:
   With list/filter arguments, default JSON/YAML runs include only agentId and state.
   Status defaults to running. Use --status stopped to list stopped agent ids.
   Broad all/closed listing and --after-timestamp are manual debugging queries.
-  reset marks stopped, not-closed agents as closed. With --agent and --human, reset clears one closed mark for manual debugging.
+  reset marks stopped, not-closed agents as closed. reset --full --human marks running and stopped, not-closed agents as closed. With --agent and --human, reset clears one closed mark for manual debugging.
   wait polls the hook ledger until every target is stopped. During polling, newly stopped targets stream to stderr. With no explicit targets, wait snapshots current running, not-closed agents.
 
 Hook config command:

@@ -100,6 +100,11 @@ export interface CloseStoppedResult {
   closed: number;
 }
 
+export interface CloseAllOpenResult {
+  matched: number;
+  closed: number;
+}
+
 export class SubagentLedger {
   private db: DatabaseSyncInstance;
 
@@ -211,6 +216,38 @@ export class SubagentLedger {
           WHERE session_id = ?
             AND status = 'stopped'
             AND closed = 0`
+      )
+      .run(now, now, sessionId);
+
+    return {
+      matched: Number(matched.count),
+      closed: Number(result.changes)
+    };
+  }
+
+  closeAllOpen(sessionId: string): CloseAllOpenResult {
+    const now = new Date().toISOString();
+    const matched = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count
+           FROM subagent_runs
+          WHERE session_id = ?
+            AND closed = 0
+            AND status IN ('running', 'stopped')`
+      )
+      .get(sessionId) as { count: number };
+
+    const result = this.db
+      .prepare(
+        `UPDATE subagent_runs
+            SET closed = 1,
+                close_event_id = NULL,
+                close_time = ?,
+                close_payload = NULL,
+                updated_at = ?
+          WHERE session_id = ?
+            AND closed = 0
+            AND status IN ('running', 'stopped')`
       )
       .run(now, now, sessionId);
 
