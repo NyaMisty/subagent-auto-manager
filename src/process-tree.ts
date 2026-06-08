@@ -28,13 +28,12 @@ const MAX_DEPTH = 24;
 
 export function currentHookProcessIdentity(): HookProcessIdentity {
   const lineage = collectProcessLineage(process.pid);
-  const hookParentPid = normalizePid(lineage[0]?.parentPid) ?? normalizePid(process.ppid);
   const ancestors = lineage.slice(1);
   const hookAncestorPids = ancestors.map((ancestor) => ancestor.pid);
   const resolution = resolveCodexSessionPid(ancestors);
 
   return {
-    hookParentPid,
+    hookParentPid: resolution.hookSessionPid,
     hookSessionPid: resolution.hookSessionPid,
     hookAncestorPids
   };

@@ -108,6 +108,11 @@ export interface CloseAllOpenResult {
   closed: number;
 }
 
+export interface ReconcileSessionProcessResult {
+  matched: number;
+  stopped: number;
+}
+
 export class SubagentLedger {
   private db: DatabaseSyncInstance;
 
@@ -131,8 +136,8 @@ export class SubagentLedger {
     const now = new Date().toISOString();
     const payloadJson = compactJson(input.payload);
     const fields = extractFields(input.payload, input.projectRoot, input.eventName);
-    const hookParentPid = normalizePid(input.hookParentPid);
     const hookSessionPid = normalizePid(input.hookSessionPid);
+    const hookParentPid = hookSessionPid;
     const toolStateChange = toolStateChangeFromPayload(input.eventName, input.payload);
     if (input.eventName === "PostToolUse" && !toolStateChange) {
       return {
@@ -146,7 +151,7 @@ export class SubagentLedger {
     const subagentId = fields.agentId ?? toolStateChange?.target ?? runKey;
 
     if (input.eventName === "SubagentStart") {
-      this.stopRunningIfSessionProcessChanged(input.sessionId, hookSessionPid, now);
+      this.reconcileSessionProcess(input.sessionId, hookSessionPid, now);
     }
 
     const eventId = this.insertEvent({
@@ -198,6 +203,54 @@ export class SubagentLedger {
     }
 
     return { eventId, subagentId, recorded: true };
+  }
+
+  reconcileSessionProcess(
+    sessionId: string,
+    hookSessionPid: number | null,
+    stopTime = new Date().toISOString()
+  ): ReconcileSessionProcessResult {
+    const normalizedSessionPid = normalizePid(hookSessionPid);
+    if (normalizedSessionPid === null) {
+      return { matched: 0, stopped: 0 };
+    }
+
+    const existing = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count
+          FROM subagent_runs
+          WHERE session_id = ?
+            AND status = 'running'
+            AND hook_session_pid IS NOT NULL
+            AND hook_session_pid <> ?`
+      )
+      .get(sessionId, normalizedSessionPid) as { count: number };
+
+    if (Number(existing.count) === 0) {
+      return { matched: 0, stopped: 0 };
+    }
+
+    const result = this.db
+      .prepare(
+        `UPDATE subagent_runs
+            SET status = 'stopped',
+                hook_parent_pid = hook_session_pid,
+                stop_event_id = NULL,
+                stop_time = ?,
+                stop_payload = NULL,
+                duration_ms = MAX(0, CAST((julianday(?) - julianday(start_time)) * 86400000 AS INTEGER)),
+                updated_at = ?
+          WHERE session_id = ?
+            AND status = 'running'
+            AND hook_session_pid IS NOT NULL
+            AND hook_session_pid <> ?`
+      )
+      .run(stopTime, stopTime, stopTime, sessionId, normalizedSessionPid);
+
+    return {
+      matched: Number(existing.count),
+      stopped: Number(result.changes)
+    };
   }
 
   closeStopped(sessionId: string): CloseStoppedResult {
@@ -733,40 +786,6 @@ export class SubagentLedger {
     this.db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${definition}`);
   }
 
-  private stopRunningIfSessionProcessChanged(sessionId: string, hookSessionPid: number | null, stopTime: string): void {
-    if (hookSessionPid === null) {
-      return;
-    }
-
-    const existing = this.db
-      .prepare(
-        `SELECT COUNT(*) AS count
-          FROM subagent_runs
-          WHERE session_id = ?
-            AND status = 'running'
-            AND hook_session_pid IS NOT NULL
-            AND hook_session_pid <> ?`
-      )
-      .get(sessionId, hookSessionPid) as { count: number };
-
-    if (Number(existing.count) === 0) {
-      return;
-    }
-
-    this.db
-      .prepare(
-        `UPDATE subagent_runs
-            SET status = 'stopped',
-                stop_time = ?,
-                duration_ms = MAX(0, CAST((julianday(?) - julianday(start_time)) * 86400000 AS INTEGER)),
-                updated_at = ?
-          WHERE session_id = ?
-            AND status = 'running'
-            AND hook_session_pid IS NOT NULL
-            AND hook_session_pid <> ?`
-      )
-      .run(stopTime, stopTime, stopTime, sessionId, hookSessionPid);
-  }
 }
 
 interface ExtractedFields {
@@ -973,14 +992,16 @@ function splitRunKey(runKey: string): [sessionId: string, subagentId: string] {
 }
 
 function mapRun(row: RunRow): SubagentRun {
+  const codexSessionPid = row.hook_session_pid === null ? null : Number(row.hook_session_pid);
   return {
     runKey: row.run_key,
     subagentId: row.subagent_id,
     agentId: row.agent_id,
     agentType: row.agent_type,
     sessionId: row.session_id,
-    hookParentPid: row.hook_parent_pid === null ? null : Number(row.hook_parent_pid),
-    hookSessionPid: row.hook_session_pid === null ? null : Number(row.hook_session_pid),
+    codexSessionPid,
+    hookParentPid: codexSessionPid,
+    hookSessionPid: codexSessionPid,
     turnId: row.turn_id,
     permissionMode: row.permission_mode,
     model: row.model,

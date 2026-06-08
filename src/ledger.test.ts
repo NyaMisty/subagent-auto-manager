@@ -491,7 +491,7 @@ test("keeps sessions isolated in the same project database", () => {
   }
 });
 
-test("keeps running subagents when hook parent pid changes under the same Codex session process", () => {
+test("stores the Codex session pid in both legacy hook pid fields", () => {
   const root = tempRoot();
   const ledger = SubagentLedger.open(root);
 
@@ -540,10 +540,12 @@ test("keeps running subagents when hook parent pid changes under the same Codex 
     const first = runs.find((run) => run.agentId === "agent-first-wrapper");
     const second = runs.find((run) => run.agentId === "agent-second-wrapper");
     assert.equal(first?.status, "running");
-    assert.equal(first?.hookParentPid, 100);
+    assert.equal(first?.codexSessionPid, 9000);
+    assert.equal(first?.hookParentPid, 9000);
     assert.equal(first?.hookSessionPid, 9000);
     assert.equal(second?.status, "running");
-    assert.equal(second?.hookParentPid, 200);
+    assert.equal(second?.codexSessionPid, 9000);
+    assert.equal(second?.hookParentPid, 9000);
     assert.equal(second?.hookSessionPid, 9000);
   } finally {
     ledger.close();
@@ -604,12 +606,48 @@ test("auto-stops prior running subagents when Codex session process changes in t
     assert.equal(previous?.status, "stopped");
     assert.equal(previous?.stopEventId, null);
     assert.equal(previous?.stopPayload, null);
-    assert.equal(previous?.hookParentPid, 100);
+    assert.equal(previous?.codexSessionPid, 9000);
+    assert.equal(previous?.hookParentPid, 9000);
     assert.equal(previous?.hookSessionPid, 9000);
     assert.notEqual(previous?.stopTime, null);
     assert.equal(current?.status, "running");
-    assert.equal(current?.hookParentPid, 200);
+    assert.equal(current?.codexSessionPid, 9100);
+    assert.equal(current?.hookParentPid, 9100);
     assert.equal(current?.hookSessionPid, 9100);
+  } finally {
+    ledger.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("reconciles stale running rows when the current Codex session process changed", () => {
+  const root = tempRoot();
+  const ledger = SubagentLedger.open(root);
+
+  try {
+    ledger.record({
+      eventName: "SubagentStart",
+      sessionId: "session-cli-reconcile",
+      projectRoot: root,
+      hookSessionPid: 9000,
+      payload: {
+        hook_event_name: "SubagentStart",
+        session_id: "session-cli-reconcile",
+        agent_id: "agent-stale",
+        agent_type: "explorer",
+        cwd: root,
+        prompt: "old session process"
+      }
+    });
+
+    const result = ledger.reconcileSessionProcess("session-cli-reconcile", 9100);
+
+    assert.deepEqual(result, { matched: 1, stopped: 1 });
+    const run = ledger.listSession("session-cli-reconcile")[0];
+    assert.equal(run?.status, "stopped");
+    assert.equal(run?.stopEventId, null);
+    assert.equal(run?.stopPayload, null);
+    assert.notEqual(run?.stopTime, null);
   } finally {
     ledger.close();
     rmSync(root, { recursive: true, force: true });

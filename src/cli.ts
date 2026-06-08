@@ -10,6 +10,7 @@ import { buildOutput, type DetailLevel } from "./output.js";
 import { collectProcessLineage, isCodexProcess, resolveCodexSessionPid } from "./process-tree.js";
 import { publicRunState } from "./state.js";
 import { toYaml } from "./yaml.js";
+import type { SubagentLedger } from "./ledger.js";
 import type { SubagentRun } from "./types.js";
 
 interface CliOptions {
@@ -88,6 +89,8 @@ interface DebugReport {
     CODEX_MANAGED_PACKAGE_ROOT: string | null;
   };
   processIdentity: {
+    codexSessionPid: number | null;
+    codexSessionPidSource: "CODEX_PID" | "ppid-chain" | null;
     hookParentPid: number | null;
     hookSessionPid: number | null;
     hookSessionPidSource: "CODEX_PID" | "ppid-chain" | null;
@@ -106,6 +109,7 @@ interface DebugReport {
       agentId: string | null;
       subagentId: string;
       state: "running" | "stopped" | "closed";
+      codexSessionPid: number | null;
       hookParentPid: number | null;
       hookSessionPid: number | null;
       startTime: string;
@@ -114,6 +118,7 @@ interface DebugReport {
       stopPayloadPresent: boolean;
     }>;
     pidGroups: {
+      codexSessionPid: Array<{ pid: number | null; count: number }>;
       hookParentPid: Array<{ pid: number | null; count: number }>;
       hookSessionPid: Array<{ pid: number | null; count: number }>;
     };
@@ -157,6 +162,10 @@ export async function main(argv = process.argv.slice(2), env = process.env): Pro
   const ledger = SubagentLedger.open(projectRoot);
 
   try {
+    if (options.command === "debug" || options.command === "wait" || options.command === "list" || options.command === "running") {
+      reconcileCurrentSessionProcess(ledger, sessionId, env);
+    }
+
     if (options.command === "debug") {
       const report = buildDebugReport(ledger.listSession(sessionId, true), ledger.summary(sessionId), sessionId, projectRoot, env);
       writeDebugReport(report, options.output);
@@ -758,6 +767,20 @@ async function waitForAgents(
   }
 }
 
+function reconcileCurrentSessionProcess(ledger: Pick<SubagentLedger, "reconcileSessionProcess">, sessionId: string, env: NodeJS.ProcessEnv): void {
+  const codexSessionPid = currentCodexSessionPid(env);
+  if (codexSessionPid === null) {
+    return;
+  }
+
+  ledger.reconcileSessionProcess(sessionId, codexSessionPid);
+}
+
+function currentCodexSessionPid(env: NodeJS.ProcessEnv): number | null {
+  const lineage = collectProcessLineage(process.pid);
+  return resolveCodexSessionPid(lineage.slice(1), env).hookSessionPid;
+}
+
 function resolveWaitTargets(runs: SubagentRun[], sessionId: string, targets: string[]): WaitTargetStatus[] {
   return targets.map((target) => {
     const run = runs.find((candidate) => matchesRunTarget(candidate, sessionId, target));
@@ -877,13 +900,15 @@ function buildDebugReport(runs: SubagentRun[], summary: unknown, sessionId: stri
     commandLine: processInfo.commandLine,
     isCodex: isCodexProcess(processInfo)
   }));
-  const hookParentPid = lineage[0]?.parentPid ?? process.ppid;
-  const directParent = processLineage.find((processInfo) => processInfo.pid === hookParentPid);
+  const codexSessionPid = resolution.hookSessionPid;
+  const directParentPid = lineage[0]?.parentPid ?? process.ppid;
+  const directParent = processLineage.find((processInfo) => processInfo.pid === directParentPid);
   const recentRuns = runs.slice(0, 10).map((run) => ({
     runKey: run.runKey,
     agentId: run.agentId,
     subagentId: run.subagentId,
     state: publicRunState(run),
+    codexSessionPid: run.hookSessionPid,
     hookParentPid: run.hookParentPid,
     hookSessionPid: run.hookSessionPid,
     startTime: run.startTime,
@@ -906,7 +931,9 @@ function buildDebugReport(runs: SubagentRun[], summary: unknown, sessionId: stri
       CODEX_MANAGED_PACKAGE_ROOT: env.CODEX_MANAGED_PACKAGE_ROOT ?? null
     },
     processIdentity: {
-      hookParentPid,
+      codexSessionPid,
+      codexSessionPidSource: resolution.source,
+      hookParentPid: codexSessionPid,
       hookSessionPid: resolution.hookSessionPid,
       hookSessionPidSource: resolution.source,
       envCodexPid: resolution.envCodexPid,
@@ -921,6 +948,7 @@ function buildDebugReport(runs: SubagentRun[], summary: unknown, sessionId: stri
       summary,
       recentRuns,
       pidGroups: {
+        codexSessionPid: pidGroups(runs.map((run) => run.hookSessionPid)),
         hookParentPid: pidGroups(runs.map((run) => run.hookParentPid)),
         hookSessionPid: pidGroups(runs.map((run) => run.hookSessionPid))
       }
@@ -953,7 +981,7 @@ function formatDebugReport(report: DebugReport): string {
   const lines = [
     `debug generated=${report.generatedAt}`,
     `env CODEX_PID=${report.environment.CODEX_PID ?? "null"} CODEX_THREAD_ID=${report.environment.CODEX_THREAD_ID ?? "null"} managed_by_npm=${report.environment.CODEX_MANAGED_BY_NPM ?? "null"}`,
-    `process pid=${report.environment.pid} ppid=${report.environment.ppid} hookParentPid=${identity.hookParentPid ?? "null"} hookSessionPid=${identity.hookSessionPid ?? "null"} source=${identity.hookSessionPidSource ?? "null"} recursiveCodexPid=${identity.recursiveCodexPid ?? "null"}`,
+    `process pid=${report.environment.pid} ppid=${report.environment.ppid} codexSessionPid=${identity.codexSessionPid ?? "null"} source=${identity.codexSessionPidSource ?? "null"} recursiveCodexPid=${identity.recursiveCodexPid ?? "null"}`,
     `assessment ppidMatchesCodex=${report.assessment.ppidMatchesCodex} sessionPidResolved=${report.assessment.sessionPidResolved} staleDetectionAvailable=${report.assessment.staleDetectionAvailable}`,
     `ledger project=${report.ledger.projectRoot} session=${report.ledger.sessionId}`,
     "process lineage:"
@@ -963,8 +991,8 @@ function formatDebugReport(report: DebugReport): string {
     lines.push(`  [${row.depth}] pid=${row.pid} ppid=${row.parentPid ?? "null"} codex=${row.isCodex} name=${row.name ?? "null"} cmd=${row.commandLine ?? "null"}`);
   }
 
-  lines.push("ledger hook_session_pid groups:");
-  for (const group of report.ledger.pidGroups.hookSessionPid) {
+  lines.push("ledger codexSessionPid groups:");
+  for (const group of report.ledger.pidGroups.codexSessionPid) {
     lines.push(`  pid=${group.pid ?? "null"} count=${group.count}`);
   }
 

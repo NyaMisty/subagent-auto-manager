@@ -107,7 +107,7 @@ subagent_events: append-only rows for recorded supported hook events
 subagent_runs: current derived row per run_key
 ```
 
-The ledger stores compact raw JSON payloads plus extracted recall fields: ids, type, model, cwd, transcript paths, prompt, last assistant message, permission mode, turn id, tool name, tool call id, close target, hook parent PID, and Codex session PID.
+The ledger stores compact raw JSON payloads plus extracted recall fields: ids, type, model, cwd, transcript paths, prompt, last assistant message, permission mode, turn id, tool name, tool call id, close target, Codex session PID, and legacy PID columns.
 
 `SubagentStart` also stores `startArgs`, which is the start payload minus `hook_event_name`, `session_id`, `turn_id`, `transcript_path`, and `agent_transcript_path`.
 
@@ -202,16 +202,15 @@ If close targets an unknown run, the ledger creates a stopped, closed placeholde
 
 ## Stale-Run Detection
 
-On each `SubagentStart`, if the hook can identify the Codex session PID, any still-running rows in the same session with a different non-null Codex session PID are marked stopped. Their `stop_event_id` and `stop_payload` stay null, so public output shows `stopReason: "pid-change"`.
+On each `SubagentStart`, and before CLI `running`, `list`, `wait`, or `debug` reads the ledger, if the command can identify the current Codex session PID, any still-running rows in the same session with a different non-null Codex session PID are marked stopped. Their `stop_event_id` and `stop_payload` stay null, so public output shows `stopReason: "pid-change"`.
 
-The hook records:
+The hook records one meaningful PID:
 
 ```text
-hook_parent_pid: direct hook parent process PID
-hook_session_pid: CODEX_PID if set, otherwise the first Codex ancestor process PID
+codexSessionPid: CODEX_PID if set, otherwise the first Codex ancestor process PID
 ```
 
-A changed wrapper parent PID does not stop runs when the Codex session PID is unchanged.
+Legacy `hook_parent_pid` and `hook_session_pid` fields are kept for schema/output compatibility and represent the same Codex session PID for new records and public output. A changed wrapper parent PID does not stop runs when the Codex session PID is unchanged.
 
 ## CLI Logic
 

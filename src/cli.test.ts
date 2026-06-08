@@ -218,11 +218,15 @@ test("debug prints process and ledger diagnostics", async () => {
     const parsed = JSON.parse(result.stdout);
     assert.equal(parsed.command, "debug");
     assert.equal(parsed.environment.CODEX_PID, "12345");
+    assert.equal(parsed.processIdentity.codexSessionPid, 12345);
+    assert.equal(parsed.processIdentity.codexSessionPidSource, "CODEX_PID");
     assert.equal(parsed.processIdentity.hookSessionPid, 12345);
     assert.equal(parsed.processIdentity.hookSessionPidSource, "CODEX_PID");
     assert.equal(Array.isArray(parsed.processLineage), true);
     assert.equal(parsed.ledger.sessionId, "session-debug");
-    assert.equal(parsed.ledger.summary.running, 1);
+    assert.equal(parsed.ledger.summary.running, 0);
+    assert.equal(parsed.ledger.summary.stopped, 1);
+    assert.deepEqual(parsed.ledger.pidGroups.codexSessionPid, [{ pid: 9000, count: 1 }]);
     assert.deepEqual(parsed.ledger.pidGroups.hookSessionPid, [{ pid: 9000, count: 1 }]);
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -310,7 +314,7 @@ test("CLI running output excludes stale runs auto-stopped after Codex session pr
   const root = tempRoot();
   seedRun(root, "session-parent-pid", "running", "agent-stale", 100, 9000);
   seedRun(root, "session-parent-pid", "running", "agent-current", 200, 9100);
-  const result = runCli(["--cwd", root, "--running"], { CODEX_THREAD_ID: "session-parent-pid" });
+  const result = runCli(["--cwd", root, "--running"], { CODEX_THREAD_ID: "session-parent-pid", CODEX_PID: "9100" });
 
   try {
     const parsed = JSON.parse(result.stdout);
@@ -323,7 +327,40 @@ test("CLI running output excludes stale runs auto-stopped after Codex session pr
         state: "running"
       }
     ]);
-    const stopped = runCli(["--cwd", root, "--stopped"], { CODEX_THREAD_ID: "session-parent-pid" });
+    const stopped = runCli(["--cwd", root, "--stopped"], { CODEX_THREAD_ID: "session-parent-pid", CODEX_PID: "9100" });
+    assert.deepEqual(JSON.parse(stopped.stdout).runs, [
+      {
+        agentId: "agent-stale",
+        state: "stopped",
+        stopReason: "pid-change"
+      }
+    ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("CLI queries reconcile stale running rows with the current Codex session pid", async () => {
+  const root = tempRoot();
+  seedRun(root, "session-cli-pid-reconcile", "running", "agent-stale", 100, 9000);
+  const result = runCli(["--cwd", root, "--running"], {
+    CODEX_THREAD_ID: "session-cli-pid-reconcile",
+    CODEX_PID: "9100"
+  });
+
+  try {
+    const parsed = JSON.parse(result.stdout);
+    assert.deepEqual(parsed.summary, {
+      running: 0,
+      stopped: 1,
+      closed: 0,
+      total: 1,
+      shown: 0
+    });
+    const stopped = runCli(["--cwd", root, "--stopped"], {
+      CODEX_THREAD_ID: "session-cli-pid-reconcile",
+      CODEX_PID: "9100"
+    });
     assert.deepEqual(JSON.parse(stopped.stdout).runs, [
       {
         agentId: "agent-stale",
@@ -583,6 +620,29 @@ test("wait returns when every target is stopped", async () => {
   }
 });
 
+test("wait reconciles stale running targets before polling", async () => {
+  const root = tempRoot();
+  seedRun(root, "session-wait-pid-reconcile", "running", "agent-stale", 100, 9000);
+  const result = runCli(["wait", "agent-stale", "--cwd", root, "--timeout-ms", "0"], {
+    CODEX_THREAD_ID: "session-wait-pid-reconcile",
+    CODEX_PID: "9100"
+  });
+
+  try {
+    const parsed = JSON.parse(result.stdout);
+    assert.equal(parsed.summary.complete, true);
+    assert.equal(parsed.summary.stopped, 1);
+    assert.equal(parsed.summary.running, 0);
+    assert.deepEqual(parsed.incompleteTargets, []);
+    assert.deepEqual(parsed.targets.map((target: { target: string; state: string }) => [target.target, target.state]), [
+      ["agent-stale", "stopped"]
+    ]);
+    assert.match(result.stderr, /\[subagent-auto-manager\] wait stopped agentId=agent-stale type=explorer/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("wait streams each newly stopped agent id to stderr", async () => {
   const root = tempRoot();
   seedRun(root, "session-wait-stream", "running", "agent-stream");
@@ -594,7 +654,7 @@ test("wait streams each newly stopped agent id to stderr", async () => {
       process.execPath,
       [cliPath, "wait", "agent-stream", "--cwd", root, "--timeout-ms", "5000", "--interval-ms", "50"],
       {
-        env: { ...process.env, CODEX_THREAD_ID: "session-wait-stream" },
+        env: testEnv({ CODEX_THREAD_ID: "session-wait-stream" }),
         stdio: ["ignore", "pipe", "pipe"]
       }
     );
@@ -762,7 +822,7 @@ test("hook command through CLI records stdin and exposes it through query output
 function runCli(args: string[], env: NodeJS.ProcessEnv, expectedStatus = 0): { stdout: string; stderr: string } {
   const cliPath = join(dirname(fileURLToPath(import.meta.url)), "cli.js");
   const result = spawnSync(process.execPath, [cliPath, ...args], {
-    env: { ...process.env, ...env },
+    env: testEnv(env),
     encoding: "utf8"
   });
   assert.equal(result.status, expectedStatus, result.stderr);
@@ -780,7 +840,7 @@ function runCliWithInput(
 ): { stdout: string; stderr: string } {
   const cliPath = join(dirname(fileURLToPath(import.meta.url)), "cli.js");
   const result = spawnSync(process.execPath, [cliPath, ...args], {
-    env: { ...process.env, ...env },
+    env: testEnv(env),
     input,
     encoding: "utf8"
   });
@@ -789,6 +849,12 @@ function runCliWithInput(
     stdout: result.stdout,
     stderr: result.stderr
   };
+}
+
+function testEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const merged = { ...process.env };
+  delete merged.CODEX_PID;
+  return { ...merged, ...env };
 }
 
 function closeRun(root: string, sessionId: string, agentId: string): void {
@@ -893,7 +959,6 @@ function seedRun(
       eventName: "SubagentStart",
       sessionId,
       projectRoot: root,
-      hookParentPid,
       hookSessionPid,
       payload: {
         hook_event_name: "SubagentStart",
@@ -918,7 +983,7 @@ function seedRun(
         eventName: "SubagentStop",
         sessionId,
         projectRoot: root,
-        hookParentPid,
+        hookSessionPid,
         payload: {
           hook_event_name: "SubagentStop",
           session_id: sessionId,

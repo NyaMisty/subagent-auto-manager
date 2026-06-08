@@ -22,6 +22,7 @@ export interface SubagentRun {
   agentId: string | null;
   agentType: string | null;
   sessionId: string;
+  codexSessionPid: number | null;
   hookParentPid: number | null;
   hookSessionPid: number | null;
   turnId: string | null;

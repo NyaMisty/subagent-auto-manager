@@ -69,6 +69,7 @@ function run(overrides: Partial<SubagentRun>): SubagentRun {
     agentId: overrides.agentId ?? "agent",
     agentType: "general",
     sessionId: "session",
+    codexSessionPid: null,
     hookParentPid: null,
     hookSessionPid: null,
     turnId: "turn",
