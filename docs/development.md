@@ -62,7 +62,7 @@ npx -y subagent-auto-manager@latest debug --session <session-id> --cwd <project>
 
 `reset` marks stopped, not-closed runs as closed. `reset --full --human` marks running and stopped, not-closed runs as closed. `reset --agent <id> --human` clears one closed mark and is only for manual debugging.
 
-`wait` streams each newly stopped agent id to stderr during polling and keeps stdout for the final result document. On timeout, it exits with code 1 and reports targets that did not emit `SubagentStop`; JSON/YAML output includes these rows in `incompleteTargets`, text output prints `Pending` for targets that started but have not returned yet and `Miss` for targets with no matching ledger row, and stderr receives one `[subagent-auto-manager] wait timeout ...` line for each incomplete target.
+`wait` streams each newly stopped agent id to stderr during polling and keeps stdout for the final result document. On timeout, it exits with code 1 and reports targets that did not emit `SubagentStop`; JSON/YAML output includes these rows in `incompleteTargets`, text output prints `Pending` for targets that started but have not returned yet, `Closed` for targets closed by stale PID reconcile or close tracking, and `Miss` for targets with no matching ledger row. Stderr receives one `[subagent-auto-manager] wait timeout ...` line for each incomplete target.
 
 `debug --human` prints a diagnostics report for stale-run PID detection. It includes `CODEX_PID`, current `pid`/`ppid`, recursive process lineage, Codex process matches, resolved `codexSessionPid`, session summary, recent ledger rows, and grouped ledger Codex session PID values. Legacy `hookParentPid` / `hookSessionPid` fields remain in JSON for compatibility.
 

@@ -633,21 +633,29 @@ test("wait returns when every target is stopped", async () => {
 test("wait reconciles stale running targets before polling", async () => {
   const root = tempRoot();
   seedRun(root, "session-wait-pid-reconcile", "running", "agent-stale", 100, 9000);
-  const result = runCli(["wait", "agent-stale", "--cwd", root, "--timeout-ms", "0"], {
-    CODEX_THREAD_ID: "session-wait-pid-reconcile",
-    CODEX_PID: "9100"
-  });
+  const result = runCli(
+    ["wait", "agent-stale", "--cwd", root, "--timeout-ms", "0"],
+    {
+      CODEX_THREAD_ID: "session-wait-pid-reconcile",
+      CODEX_PID: "9100"
+    },
+    1
+  );
 
   try {
     const parsed = JSON.parse(result.stdout);
-    assert.equal(parsed.summary.complete, true);
-    assert.equal(parsed.summary.stopped, 1);
+    assert.equal(parsed.summary.complete, false);
+    assert.equal(parsed.summary.stopped, 0);
+    assert.equal(parsed.summary.closed, 1);
     assert.equal(parsed.summary.running, 0);
-    assert.deepEqual(parsed.incompleteTargets, []);
-    assert.deepEqual(parsed.targets.map((target: { target: string; state: string }) => [target.target, target.state]), [
-      ["agent-stale", "stopped"]
+    assert.equal(parsed.summary.missing, 0);
+    assert.deepEqual(parsed.incompleteTargets.map((target: { target: string; state: string }) => [target.target, target.state]), [
+      ["agent-stale", "closed"]
     ]);
-    assert.match(result.stderr, /\[subagent-auto-manager\] wait stopped agentId=agent-stale type=explorer/);
+    assert.deepEqual(parsed.targets.map((target: { target: string; state: string }) => [target.target, target.state]), [
+      ["agent-stale", "closed"]
+    ]);
+    assert.match(result.stderr, /\[subagent-auto-manager\] wait timeout agentId=agent-stale state=closed type=explorer/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -714,7 +722,7 @@ test("wait times out for running or missing targets", async () => {
   );
 
   try {
-    assert.match(result.stdout, /^wait timeout session=session-wait-timeout targets=3 stopped=1 running=1 missing=1 /);
+    assert.match(result.stdout, /^wait timeout session=session-wait-timeout targets=3 stopped=1 closed=0 running=1 missing=1 /);
     assert.match(result.stdout, /Pending agent-running explorer/);
     assert.match(result.stdout, /Miss agent-missing/);
     assert.equal(result.stdout.includes("Stopped agent-done"), false);

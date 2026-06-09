@@ -41,7 +41,7 @@ interface CliOptions {
 
 interface WaitTargetStatus {
   target: string;
-  state: "stopped" | "running" | "missing";
+  state: "stopped" | "running" | "closed" | "missing";
   agentId: string | null;
   subagentId: string | null;
   runKey: string | null;
@@ -59,6 +59,7 @@ interface WaitResult {
     complete: boolean;
     total: number;
     stopped: number;
+    closed: number;
     running: number;
     missing: number;
     timeoutMs: number;
@@ -831,7 +832,7 @@ function resolveWaitTargets(runs: SubagentRun[], sessionId: string, targets: str
 
     return {
       target,
-      state: run.status === "stopped" ? "stopped" : "running",
+      state: publicRunState(run),
       agentId: run.agentId,
       subagentId: run.subagentId,
       runKey: run.runKey,
@@ -857,14 +858,16 @@ function matchesRunTarget(run: SubagentRun, sessionId: string, target: string): 
 function buildWaitResult(sessionId: string, targets: WaitTargetStatus[], timeoutMs: number, elapsedMs: number): WaitResult {
   const incompleteTargets = targets.filter((target) => target.state !== "stopped");
   const stopped = targets.filter((target) => target.state === "stopped").length;
+  const closed = targets.filter((target) => target.state === "closed").length;
   const running = targets.filter((target) => target.state === "running").length;
   const missing = targets.filter((target) => target.state === "missing").length;
   return {
     summary: {
       sessionId,
-      complete: running === 0 && missing === 0,
+      complete: incompleteTargets.length === 0,
       total: targets.length,
       stopped,
+      closed,
       running,
       missing,
       timeoutMs,
@@ -1081,12 +1084,13 @@ function formatWaitResult(result: WaitResult): string {
   const lines = [
     summary.complete
       ? `wait complete session=${summary.sessionId} targets=${summary.total} elapsed_ms=${summary.elapsedMs}`
-      : `wait timeout session=${summary.sessionId} targets=${summary.total} stopped=${summary.stopped} running=${summary.running} missing=${summary.missing} elapsed_ms=${summary.elapsedMs} timeout_ms=${summary.timeoutMs}`
+      : `wait timeout session=${summary.sessionId} targets=${summary.total} stopped=${summary.stopped} closed=${summary.closed} running=${summary.running} missing=${summary.missing} elapsed_ms=${summary.elapsedMs} timeout_ms=${summary.timeoutMs}`
   ];
 
   const visibleTargets = summary.complete ? result.targets : result.incompleteTargets;
   for (const target of visibleTargets) {
-    const label = target.state === "stopped" ? "Stopped" : target.state === "running" ? "Pending" : "Miss";
+    const label =
+      target.state === "stopped" ? "Stopped" : target.state === "closed" ? "Closed" : target.state === "running" ? "Pending" : "Miss";
     const name = target.agentId ?? target.subagentId ?? target.target;
     const type = target.agentType ? ` ${target.agentType}` : "";
     lines.push(`${label} ${name}${type}`);
@@ -1191,7 +1195,7 @@ Defaults:
   --agent filters list/running output by agentId, subagentId, runKey, or <session>:<agent-id>.
   Broad all/closed listing and --after-timestamp are manual debugging queries.
   reset marks stopped, not-closed agents as closed. reset --full --human marks running and stopped, not-closed agents as closed. With --agent and --human, reset clears one closed mark for manual debugging.
-  wait polls the hook ledger until every target is stopped. During polling, newly stopped agent ids stream to stderr. With no explicit targets, wait snapshots current running, not-closed agents.
+  wait polls the hook ledger until every target is stopped by SubagentStop. During polling, newly stopped agent ids stream to stderr. With no explicit targets, wait snapshots current running, not-closed agents.
   debug prints a human diagnostics report for CODEX_PID, recursive ppid Codex detection, process lineage, and ledger PID groups.
 
 Hook config command on Windows:
