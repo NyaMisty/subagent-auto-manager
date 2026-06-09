@@ -35,6 +35,7 @@ interface CliOptions {
   waitOptionArgs: string[];
   status: "running" | "stopped" | "closed" | "all";
   afterTimestamp?: number;
+  codexPid?: number;
   human: boolean;
 }
 
@@ -147,7 +148,7 @@ export async function main(argv = process.argv.slice(2), env = process.env): Pro
   if (options.command === "hook") {
     try {
       const { runHook } = await import("./hook.js");
-      await runHook();
+      await runHook({ codexPid: options.codexPid });
     } catch (error: unknown) {
       process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
       process.stdout.write("{}\n");
@@ -399,6 +400,21 @@ function parseArgs(argv: string[]): CliOptions {
       continue;
     }
 
+    if (arg === "--codex-pid") {
+      const value = argv[index + 1];
+      if (!value) {
+        throw new Error("--codex-pid requires a value");
+      }
+      options.codexPid = parsePid(value, "--codex-pid");
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith("--codex-pid=")) {
+      options.codexPid = parsePid(arg.slice("--codex-pid=".length), "--codex-pid");
+      continue;
+    }
+
     if (arg === "--medium") {
       if (options.command === "reset") {
         throw new Error("reset does not support --medium");
@@ -572,6 +588,10 @@ function validateCommandOptions(options: CliOptions): void {
     return;
   }
 
+  if (options.command !== "hook" && options.codexPid !== undefined) {
+    throw new Error("--codex-pid is only supported by hook");
+  }
+
   if (options.command === "wait") {
     if (options.allRequested) {
       options.waitAllRunning = true;
@@ -727,6 +747,15 @@ function parseUnixTimestamp(value: string, label: string): number {
   const milliseconds = parsed * 1000;
   if (!Number.isSafeInteger(milliseconds) || Number.isNaN(new Date(milliseconds).getTime())) {
     throw new Error(`${label} is outside the supported date range`);
+  }
+
+  return parsed;
+}
+
+function parsePid(value: string, label: string): number {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new Error(`${label} requires a positive integer PID`);
   }
 
   return parsed;
@@ -1148,7 +1177,7 @@ function helpText(): string {
   subagent-auto-manager reset [--full --human] [--agent <id> --human] [--session <id>] [--cwd <project>] [--json|--yaml|--text]
   subagent-auto-manager wait [agent-id ...] [--all] [--timeout-ms <ms>] [--interval-ms <ms>] [--session <id>] [--cwd <project>] [--json|--yaml|--text]
   subagent-auto-manager debug --human [--session <id>] [--cwd <project>] [--json|--yaml|--text]
-  subagent-auto-manager hook
+  subagent-auto-manager hook [--codex-pid <pid>]
 
 Defaults:
   --session defaults to CODEX_THREAD_ID.
@@ -1165,8 +1194,8 @@ Defaults:
   wait polls the hook ledger until every target is stopped. During polling, newly stopped agent ids stream to stderr. With no explicit targets, wait snapshots current running, not-closed agents.
   debug prints a human diagnostics report for CODEX_PID, recursive ppid Codex detection, process lineage, and ledger PID groups.
 
-Hook config command:
-  npx -y subagent-auto-manager@latest hook
+Hook config command on Windows:
+  $codexPid=(Get-Process -Id $PID).Parent.Id; npx -y subagent-auto-manager@latest hook --codex-pid $codexPid
 `;
 }
 

@@ -13,6 +13,7 @@ export interface HookProcessIdentity {
   hookParentPid: number | null;
   hookSessionPid: number | null;
   hookAncestorPids: number[];
+  hookIdentityDiagnostics: string[];
 }
 
 export type CodexSessionPidSource = "CODEX_PID" | "ppid-chain" | null;
@@ -25,17 +26,77 @@ export interface CodexSessionPidResolution {
 }
 
 const MAX_DEPTH = 24;
+const DEFAULT_IDENTITY_ATTEMPTS = 3;
+const DEFAULT_IDENTITY_RETRY_DELAY_MS = 250;
 
-export function currentHookProcessIdentity(): HookProcessIdentity {
-  const lineage = collectProcessLineage(process.pid);
-  const ancestors = lineage.slice(1);
-  const hookAncestorPids = ancestors.map((ancestor) => ancestor.pid);
-  const resolution = resolveCodexSessionPid(ancestors);
+export interface CurrentHookProcessIdentityOptions {
+  codexPid?: number | null;
+  requireCodexPid?: boolean;
+  attempts?: number;
+  retryDelayMs?: number;
+  collectLineage?: (pid: number) => ProcessInfo[];
+  env?: NodeJS.ProcessEnv;
+}
 
-  return {
-    hookParentPid: resolution.hookSessionPid,
-    hookSessionPid: resolution.hookSessionPid,
-    hookAncestorPids
+export function currentHookProcessIdentity(options: CurrentHookProcessIdentityOptions = {}): HookProcessIdentity {
+  const env = options.env ?? process.env;
+  const explicitCodexPid = normalizePid(options.codexPid);
+  const envCodexPid = normalizePid(env.CODEX_PID);
+  const trustedCodexPid = explicitCodexPid ?? envCodexPid;
+  if (trustedCodexPid !== null) {
+    return {
+      hookParentPid: trustedCodexPid,
+      hookSessionPid: trustedCodexPid,
+      hookAncestorPids: [],
+      hookIdentityDiagnostics: [`codex_pid=${trustedCodexPid} source=${explicitCodexPid === null ? "CODEX_PID" : "explicit-argument"}`]
+    };
+  }
+
+  if (options.requireCodexPid) {
+    return {
+      hookParentPid: null,
+      hookSessionPid: null,
+      hookAncestorPids: [],
+      hookIdentityDiagnostics: [`env_CODEX_PID=${env.CODEX_PID ?? "null"}`]
+    };
+  }
+
+  const attempts = Math.max(1, Math.floor(options.attempts ?? DEFAULT_IDENTITY_ATTEMPTS));
+  const retryDelayMs = Math.max(0, Math.floor(options.retryDelayMs ?? DEFAULT_IDENTITY_RETRY_DELAY_MS));
+  const collectLineage = options.collectLineage ?? collectProcessLineage;
+  const diagnostics: string[] = [];
+  let lastIdentity: HookProcessIdentity | null = null;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const lineage = collectLineage(process.pid);
+    const ancestors = lineage.slice(1);
+    const hookAncestorPids = ancestors.map((ancestor) => ancestor.pid);
+    const resolution = resolveCodexSessionPid(ancestors, env);
+
+    lastIdentity = {
+      hookParentPid: resolution.hookSessionPid,
+      hookSessionPid: resolution.hookSessionPid,
+      hookAncestorPids,
+      hookIdentityDiagnostics: diagnostics
+    };
+
+    if (resolution.hookSessionPid !== null) {
+      return lastIdentity;
+    }
+
+    diagnostics.push(
+      `attempt=${attempt} lineage_rows=${lineage.length} ancestor_rows=${ancestors.length} env_CODEX_PID=${env.CODEX_PID ?? "null"}`
+    );
+    if (attempt < attempts) {
+      sleepSync(retryDelayMs);
+    }
+  }
+
+  return lastIdentity ?? {
+    hookParentPid: null,
+    hookSessionPid: null,
+    hookAncestorPids: [],
+    hookIdentityDiagnostics: diagnostics
   };
 }
 
@@ -114,7 +175,7 @@ $rows | ConvertTo-Json -Compress
     const stdout = execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
-      timeout: 5000
+      timeout: 20000
     }).trim();
     if (stdout.length === 0) {
       return [];
@@ -126,6 +187,14 @@ $rows | ConvertTo-Json -Compress
   } catch {
     return [];
   }
+}
+
+function sleepSync(milliseconds: number): void {
+  if (milliseconds <= 0) {
+    return;
+  }
+
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
 
 function collectProcProcessLineage(pid: number, maxDepth: number): ProcessInfo[] {

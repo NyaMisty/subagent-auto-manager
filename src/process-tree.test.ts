@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { findCodexAncestorPid, isCodexProcess, resolveCodexSessionPid } from "./process-tree.js";
+import { currentHookProcessIdentity, findCodexAncestorPid, isCodexProcess, resolveCodexSessionPid } from "./process-tree.js";
 
 test("detects Codex process names and package command lines", () => {
   assert.equal(
@@ -83,4 +83,97 @@ test("falls back to recursive Codex ancestor lookup when CODEX_PID is invalid", 
       recursiveCodexPid: 100
     }
   );
+});
+
+test("uses explicit Codex session pid without process lookup", () => {
+  let calls = 0;
+  const identity = currentHookProcessIdentity({
+    codexPid: 7777,
+    collectLineage: () => {
+      calls += 1;
+      return [];
+    }
+  });
+
+  assert.equal(calls, 0);
+  assert.equal(identity.hookSessionPid, 7777);
+  assert.equal(identity.hookParentPid, 7777);
+  assert.deepEqual(identity.hookAncestorPids, []);
+  assert.deepEqual(identity.hookIdentityDiagnostics, ["codex_pid=7777 source=explicit-argument"]);
+});
+
+test("uses CODEX_PID without process lookup", () => {
+  let calls = 0;
+  const identity = currentHookProcessIdentity({
+    env: { CODEX_PID: "8888" },
+    collectLineage: () => {
+      calls += 1;
+      return [];
+    }
+  });
+
+  assert.equal(calls, 0);
+  assert.equal(identity.hookSessionPid, 8888);
+  assert.equal(identity.hookParentPid, 8888);
+  assert.deepEqual(identity.hookAncestorPids, []);
+  assert.deepEqual(identity.hookIdentityDiagnostics, ["codex_pid=8888 source=CODEX_PID"]);
+});
+
+test("required Codex PID mode does not fall back to process lookup", () => {
+  let calls = 0;
+  const identity = currentHookProcessIdentity({
+    requireCodexPid: true,
+    env: {},
+    collectLineage: () => {
+      calls += 1;
+      return [{ pid: 200, parentPid: 100, name: "codex.exe", commandLine: "codex" }];
+    }
+  });
+
+  assert.equal(calls, 0);
+  assert.equal(identity.hookSessionPid, null);
+  assert.equal(identity.hookParentPid, null);
+  assert.deepEqual(identity.hookAncestorPids, []);
+  assert.deepEqual(identity.hookIdentityDiagnostics, ["env_CODEX_PID=null"]);
+});
+
+test("retries hook process identity collection before returning null pid", () => {
+  let calls = 0;
+  const identity = currentHookProcessIdentity({
+    attempts: 2,
+    retryDelayMs: 0,
+    env: {},
+    collectLineage: () => {
+      calls += 1;
+      return calls === 1
+        ? []
+        : [
+            { pid: 300, parentPid: 200, name: "node.exe", commandLine: "node subagent-auto-manager hook" },
+            { pid: 200, parentPid: 100, name: "codex.exe", commandLine: "codex" }
+          ];
+    }
+  });
+
+  assert.equal(calls, 2);
+  assert.equal(identity.hookSessionPid, 200);
+  assert.equal(identity.hookParentPid, 200);
+  assert.deepEqual(identity.hookAncestorPids, [200]);
+  assert.deepEqual(identity.hookIdentityDiagnostics, ["attempt=1 lineage_rows=0 ancestor_rows=0 env_CODEX_PID=null"]);
+});
+
+test("returns diagnostics when hook process identity cannot resolve Codex session pid", () => {
+  const identity = currentHookProcessIdentity({
+    attempts: 2,
+    retryDelayMs: 0,
+    env: {},
+    collectLineage: () => [{ pid: 300, parentPid: 200, name: "node.exe", commandLine: "node subagent-auto-manager hook" }]
+  });
+
+  assert.equal(identity.hookSessionPid, null);
+  assert.equal(identity.hookParentPid, null);
+  assert.deepEqual(identity.hookAncestorPids, []);
+  assert.deepEqual(identity.hookIdentityDiagnostics, [
+    "attempt=1 lineage_rows=1 ancestor_rows=0 env_CODEX_PID=null",
+    "attempt=2 lineage_rows=1 ancestor_rows=0 env_CODEX_PID=null"
+  ]);
 });

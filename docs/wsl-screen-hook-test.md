@@ -127,9 +127,10 @@ Example temporary capture script:
 `C:\Users\Misty\AppData\Local\Temp\sam-ptu-capture.ps1`
 
 ```powershell
+param([int]$CodexPid)
 $raw = [Console]::In.ReadToEnd()
 Add-Content -LiteralPath "C:\Users\Misty\AppData\Local\Temp\sam-ptu-capture.jsonl" -Value $raw
-$raw | npx -y subagent-auto-manager@latest hook
+$raw | npx -y subagent-auto-manager@latest hook --codex-pid $CodexPid
 exit $LASTEXITCODE
 ```
 
@@ -141,7 +142,7 @@ Temporary `PostToolUse` hook command:
   "hooks": [
     {
       "type": "command",
-      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\Users\\Misty\\AppData\\Local\\Temp\\sam-ptu-capture.ps1",
+      "command": "$codexPid=(Get-Process -Id $PID).Parent.Id; powershell -NoProfile -ExecutionPolicy Bypass -File C:\\Users\\Misty\\AppData\\Local\\Temp\\sam-ptu-capture.ps1 -CodexPid $codexPid",
       "statusMessage": "Capturing subagent close/resume"
     }
   ]
@@ -163,7 +164,7 @@ Restore the original hook immediately after the diagnostic:
   "hooks": [
     {
       "type": "command",
-      "command": "npx -y subagent-auto-manager@latest hook",
+      "command": "$codexPid=(Get-Process -Id $PID).Parent.Id; npx -y subagent-auto-manager@latest hook --codex-pid $codexPid",
       "statusMessage": "Recording subagent close/resume"
     }
   ]

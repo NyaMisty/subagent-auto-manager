@@ -27,7 +27,7 @@ Add this to Codex hooks config, for example project `.codex/hooks.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y subagent-auto-manager@latest hook",
+            "command": "$codexPid=(Get-Process -Id $PID).Parent.Id; npx -y subagent-auto-manager@latest hook --codex-pid $codexPid",
             "statusMessage": "Recording subagent start"
           }
         ]
@@ -39,7 +39,7 @@ Add this to Codex hooks config, for example project `.codex/hooks.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y subagent-auto-manager@latest hook",
+            "command": "$codexPid=(Get-Process -Id $PID).Parent.Id; npx -y subagent-auto-manager@latest hook --codex-pid $codexPid",
             "statusMessage": "Recording subagent stop"
           }
         ]
@@ -51,7 +51,7 @@ Add this to Codex hooks config, for example project `.codex/hooks.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y subagent-auto-manager@latest hook",
+            "command": "$codexPid=(Get-Process -Id $PID).Parent.Id; npx -y subagent-auto-manager@latest hook --codex-pid $codexPid",
             "statusMessage": "Recording subagent close/resume"
           }
         ]
@@ -61,7 +61,7 @@ Add this to Codex hooks config, for example project `.codex/hooks.json`:
 }
 ```
 
-The command reads Codex JSON from stdin and writes `{}` to stdout so Codex can continue normally. `SubagentStart` and `SubagentStop` payloads are stored in full. The hook records one meaningful process identity: the Codex session PID. It comes from `CODEX_PID` when that environment variable is set to a valid PID, otherwise from recursively walking the hook process `ppid` chain until it finds the nearest Codex process. For schema compatibility this PID is still exposed through legacy `hook_parent_pid` / `hook_session_pid` fields, but both represent the same Codex session PID for new records and public output. If a `SubagentStart` or CLI query for the same `session_id` sees a different identified Codex session PID, prior running runs for that session are treated as stale after a shutdown and automatically marked `stopped`. Wrapper parent PIDs from shell, npm, or `npx` are ignored. `PostToolUse` tracks `close_agent` and `resume_agent`, including Codex multi-agent v1 names such as `multi_agent_v1close_agent`, `multi_agent_v1__close_agent`, or `multi_agent_v1.close_agent`, which are the available signal for whether the parent closed or reopened a subagent thread.
+The command reads Codex JSON from stdin and writes `{}` to stdout so Codex can continue normally. `SubagentStart` and `SubagentStop` payloads are stored in full. The hook records one meaningful process identity: the Codex session PID. Hook recording requires either `--codex-pid <pid>` or a valid `CODEX_PID` environment variable; the Windows PowerShell example above passes the parent PID of Codex's hook shell explicitly with `--codex-pid`. For schema compatibility this PID is still exposed through legacy `hook_parent_pid` / `hook_session_pid` fields, but both represent the same Codex session PID for new records and public output. If a `SubagentStart` or CLI query for the same `session_id` sees a different identified Codex session PID, prior running runs for that session are treated as stale after a shutdown and automatically marked `stopped`. Wrapper parent PIDs from shell, npm, or `npx` are ignored. `PostToolUse` tracks `close_agent` and `resume_agent`, including Codex multi-agent v1 names such as `multi_agent_v1close_agent`, `multi_agent_v1__close_agent`, or `multi_agent_v1.close_agent`, which are the available signal for whether the parent closed or reopened a subagent thread.
 
 For a global install, put the same `hooks` block in `~/.codex/hooks.json`. On Windows this is typically:
 

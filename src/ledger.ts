@@ -118,10 +118,13 @@ export class SubagentLedger {
 
   constructor(private readonly filePath: string) {
     mkdirSync(dirname(filePath), { recursive: true });
-    this.db = new DatabaseSync(filePath);
-    this.db.exec("PRAGMA journal_mode = WAL");
-    this.db.exec("PRAGMA foreign_keys = ON");
-    this.migrate();
+    this.db = openDatabaseWithRetry(filePath, (db) => {
+      this.db = db;
+      db.exec("PRAGMA busy_timeout = 30000");
+      db.exec("PRAGMA journal_mode = WAL");
+      db.exec("PRAGMA foreign_keys = ON");
+      this.migrate();
+    });
   }
 
   static open(projectRoot = process.cwd()): SubagentLedger {
@@ -786,6 +789,52 @@ export class SubagentLedger {
     this.db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${definition}`);
   }
 
+}
+
+const DATABASE_OPEN_ATTEMPTS = 5;
+const DATABASE_OPEN_RETRY_DELAY_MS = 100;
+
+function openDatabaseWithRetry(filePath: string, initialize: (db: DatabaseSyncInstance) => void): DatabaseSyncInstance {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= DATABASE_OPEN_ATTEMPTS; attempt += 1) {
+    let db: DatabaseSyncInstance | null = null;
+    try {
+      db = new DatabaseSync(filePath);
+      initialize(db);
+      return db;
+    } catch (error: unknown) {
+      lastError = error;
+      if (db !== null) {
+        try {
+          db.close();
+        } catch {
+          // Ignore close failures while preserving the original SQLite error.
+        }
+      }
+
+      if (!isBusyOrLockedError(error) || attempt === DATABASE_OPEN_ATTEMPTS) {
+        throw error;
+      }
+
+      sleepSync(DATABASE_OPEN_RETRY_DELAY_MS * attempt);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
+function isBusyOrLockedError(error: unknown): boolean {
+  const message = error instanceof Error ? `${error.name} ${error.message}` : String(error);
+  return /SQLITE_BUSY|SQLITE_LOCKED|database is locked|database table is locked/i.test(message);
+}
+
+function sleepSync(milliseconds: number): void {
+  if (milliseconds <= 0) {
+    return;
+  }
+
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
 
 interface ExtractedFields {

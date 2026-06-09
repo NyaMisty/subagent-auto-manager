@@ -7,13 +7,24 @@ import { isDirectEntry } from "./runtime.js";
 import { sessionIdFromHook } from "./session.js";
 import { SUPPORTED_EVENTS, type HookInput, type SupportedEvent } from "./types.js";
 
-export async function runHook(): Promise<void> {
+export interface RunHookOptions {
+  codexPid?: number | null;
+}
+
+export async function runHook(options: RunHookOptions = {}): Promise<void> {
   const raw = await readStdin();
   const payload = parseJsonObject(raw) as HookInput;
   const eventName = supportedEvent(payload.hook_event_name);
   const sessionId = sessionIdFromHook(payload);
   const projectRoot = projectRootFrom(payload);
-  const processIdentity = currentHookProcessIdentity();
+  const processIdentity = currentHookProcessIdentity({
+    codexPid: options.codexPid,
+    requireCodexPid: true
+  });
+  if (processIdentity.hookSessionPid === null) {
+    const diagnostics = processIdentity.hookIdentityDiagnostics.length > 0 ? ` ${processIdentity.hookIdentityDiagnostics.join("; ")}` : "";
+    throw new Error(`hook requires --codex-pid or CODEX_PID from hooks.json.${diagnostics}`);
+  }
   const ledger = SubagentLedger.open(projectRoot);
 
   try {

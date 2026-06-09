@@ -783,7 +783,9 @@ test("hook command rejects CLI options that do not affect hook stdin", async () 
     [["hook", "--cwd", "."], /hook does not support --cwd/],
     [["hook", "--json"], /hook does not support output format options/],
     [["hook", "--agent", "agent-a"], /hook does not support --agent/],
-    [["hook", "--timeout-ms", "1"], /--timeout-ms is only supported by wait/]
+    [["hook", "--timeout-ms", "1"], /--timeout-ms is only supported by wait/],
+    [["--codex-pid", "12345"], /--codex-pid is only supported by hook/],
+    [["hook", "--codex-pid", "0"], /--codex-pid requires a positive integer PID/]
   ] as Array<[string[], RegExp]>) {
     const result = runCliWithInput(args, "{}", { CODEX_THREAD_ID: "session-hook-options" }, 1);
     assert.equal(result.stdout, "");
@@ -791,7 +793,7 @@ test("hook command rejects CLI options that do not affect hook stdin", async () 
   }
 });
 
-test("hook command through CLI records stdin and exposes it through query output", async () => {
+test("hook command through CLI records explicit Codex pid and exposes it through query output", async () => {
   const root = tempRoot();
   const payload = {
     hook_event_name: "SubagentStart",
@@ -803,17 +805,66 @@ test("hook command through CLI records stdin and exposes it through query output
   };
 
   try {
-    const hook = runCliWithInput(["hook"], JSON.stringify(payload), { CODEX_THREAD_ID: "session-hook-cli" });
-    const query = runCli(["--cwd", root, "--session", "session-hook-cli", "--agent", "agent-hook-cli"], {});
+    const hook = runCliWithInput(["hook", "--codex-pid", "12345"], JSON.stringify(payload), {
+      CODEX_THREAD_ID: "session-hook-cli"
+    });
+    const query = runCli(["--cwd", root, "--session", "session-hook-cli", "--agent", "agent-hook-cli", "--running", "--full"], {});
 
     assert.equal(hook.stdout, "{}\n");
     assert.equal(hook.stderr, "");
-    assert.deepEqual(JSON.parse(query.stdout).runs, [
-      {
-        agentId: "agent-hook-cli",
-        state: "running"
-      }
-    ]);
+    const parsed = JSON.parse(query.stdout);
+    assert.equal(parsed.runs[0].agentId, "agent-hook-cli");
+    assert.equal(parsed.runs[0].state, "running");
+    assert.equal(parsed.runs[0].codexSessionPid, 12345);
+    assert.equal(parsed.runs[0].hookParentPid, 12345);
+    assert.equal(parsed.runs[0].hookSessionPid, 12345);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("hook command still accepts CODEX_PID environment variable", async () => {
+  const root = tempRoot();
+  const payload = {
+    hook_event_name: "SubagentStart",
+    session_id: "session-hook-env-pid",
+    agent_id: "agent-hook-env-pid",
+    agent_type: "explorer",
+    cwd: root,
+    prompt: "hook env pid smoke"
+  };
+
+  try {
+    const hook = runCliWithInput(["hook"], JSON.stringify(payload), {
+      CODEX_THREAD_ID: "session-hook-env-pid",
+      CODEX_PID: "23456"
+    });
+    const query = runCli(["--cwd", root, "--session", "session-hook-env-pid", "--agent", "agent-hook-env-pid", "--running", "--full"], {});
+
+    assert.equal(hook.stdout, "{}\n");
+    assert.equal(hook.stderr, "");
+    assert.equal(JSON.parse(query.stdout).runs[0].codexSessionPid, 23456);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("hook command rejects valid payloads without explicit Codex pid", async () => {
+  const root = tempRoot();
+  const payload = {
+    hook_event_name: "SubagentStart",
+    session_id: "session-hook-no-pid",
+    agent_id: "agent-hook-no-pid",
+    agent_type: "explorer",
+    cwd: root,
+    prompt: "hook no pid smoke"
+  };
+
+  try {
+    const hook = runCliWithInput(["hook"], JSON.stringify(payload), { CODEX_THREAD_ID: "session-hook-no-pid" }, 1);
+
+    assert.equal(hook.stdout, "{}\n");
+    assert.match(hook.stderr, /hook requires --codex-pid or CODEX_PID/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
