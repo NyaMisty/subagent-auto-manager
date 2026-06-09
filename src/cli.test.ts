@@ -225,7 +225,9 @@ test("debug prints process and ledger diagnostics", async () => {
     assert.equal(Array.isArray(parsed.processLineage), true);
     assert.equal(parsed.ledger.sessionId, "session-debug");
     assert.equal(parsed.ledger.summary.running, 0);
-    assert.equal(parsed.ledger.summary.stopped, 1);
+    assert.equal(parsed.ledger.summary.stopped, 0);
+    assert.equal(parsed.ledger.summary.closed, 1);
+    assert.equal(parsed.ledger.recentRuns[0].state, "closed");
     assert.deepEqual(parsed.ledger.pidGroups.codexSessionPid, [{ pid: 9000, count: 1 }]);
     assert.deepEqual(parsed.ledger.pidGroups.hookSessionPid, [{ pid: 9000, count: 1 }]);
   } finally {
@@ -310,7 +312,7 @@ test("filters list output by agent id", async () => {
   }
 });
 
-test("CLI running output excludes stale runs auto-stopped after Codex session process changes", async () => {
+test("CLI running output excludes stale runs auto-closed after Codex session process changes", async () => {
   const root = tempRoot();
   seedRun(root, "session-parent-pid", "running", "agent-stale", 100, 9000);
   seedRun(root, "session-parent-pid", "running", "agent-current", 200, 9100);
@@ -319,7 +321,8 @@ test("CLI running output excludes stale runs auto-stopped after Codex session pr
   try {
     const parsed = JSON.parse(result.stdout);
     assert.equal(parsed.summary.running, 1);
-    assert.equal(parsed.summary.stopped, 1);
+    assert.equal(parsed.summary.stopped, 0);
+    assert.equal(parsed.summary.closed, 1);
     assert.equal(parsed.summary.total, 2);
     assert.deepEqual(parsed.runs, [
       {
@@ -328,10 +331,12 @@ test("CLI running output excludes stale runs auto-stopped after Codex session pr
       }
     ]);
     const stopped = runCli(["--cwd", root, "--stopped"], { CODEX_THREAD_ID: "session-parent-pid", CODEX_PID: "9100" });
-    assert.deepEqual(JSON.parse(stopped.stdout).runs, [
+    assert.deepEqual(JSON.parse(stopped.stdout).runs, []);
+    const closed = runCli(["--cwd", root, "--closed", "--human"], { CODEX_THREAD_ID: "session-parent-pid", CODEX_PID: "9100" });
+    assert.deepEqual(JSON.parse(closed.stdout).runs, [
       {
         agentId: "agent-stale",
-        state: "stopped",
+        state: "closed",
         stopReason: "pid-change"
       }
     ]);
@@ -352,8 +357,8 @@ test("CLI queries reconcile stale running rows with the current Codex session pi
     const parsed = JSON.parse(result.stdout);
     assert.deepEqual(parsed.summary, {
       running: 0,
-      stopped: 1,
-      closed: 0,
+      stopped: 0,
+      closed: 1,
       total: 1,
       shown: 0
     });
@@ -361,10 +366,15 @@ test("CLI queries reconcile stale running rows with the current Codex session pi
       CODEX_THREAD_ID: "session-cli-pid-reconcile",
       CODEX_PID: "9100"
     });
-    assert.deepEqual(JSON.parse(stopped.stdout).runs, [
+    assert.deepEqual(JSON.parse(stopped.stdout).runs, []);
+    const closed = runCli(["--cwd", root, "--closed", "--human"], {
+      CODEX_THREAD_ID: "session-cli-pid-reconcile",
+      CODEX_PID: "9100"
+    });
+    assert.deepEqual(JSON.parse(closed.stdout).runs, [
       {
         agentId: "agent-stale",
-        state: "stopped",
+        state: "closed",
         stopReason: "pid-change"
       }
     ]);
@@ -675,7 +685,7 @@ test("wait streams each newly stopped agent id to stderr", async () => {
 
     await delay(150);
     stopRun(root, "session-wait-stream", "agent-stream");
-    await waitForText(() => stderr, "wait stopped agentId=agent-stream");
+    await waitForText(() => stderr, "wait stopped agentId=agent-stream", 10000);
     const exitCode = await exit;
 
     assert.equal(exitCode, 0, stderr);
@@ -689,7 +699,7 @@ test("wait streams each newly stopped agent id to stderr", async () => {
     if (child && child.exitCode === null && !child.killed) {
       child.kill();
     }
-    rmSync(root, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
 

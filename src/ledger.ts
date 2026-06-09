@@ -237,10 +237,14 @@ export class SubagentLedger {
       .prepare(
         `UPDATE subagent_runs
             SET status = 'stopped',
+                closed = 1,
                 hook_parent_pid = hook_session_pid,
                 stop_event_id = NULL,
                 stop_time = ?,
                 stop_payload = NULL,
+                close_event_id = NULL,
+                close_time = ?,
+                close_payload = NULL,
                 duration_ms = MAX(0, CAST((julianday(?) - julianday(start_time)) * 86400000 AS INTEGER)),
                 updated_at = ?
           WHERE session_id = ?
@@ -248,7 +252,7 @@ export class SubagentLedger {
             AND hook_session_pid IS NOT NULL
             AND hook_session_pid <> ?`
       )
-      .run(stopTime, stopTime, stopTime, sessionId, normalizedSessionPid);
+      .run(stopTime, stopTime, stopTime, stopTime, sessionId, normalizedSessionPid);
 
     return {
       matched: Number(existing.count),

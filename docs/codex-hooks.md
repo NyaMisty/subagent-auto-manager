@@ -12,7 +12,7 @@ The event name is read from `hook_event_name`.
 
 `PostToolUse` is used only for subagent thread state tracking. A successful `close_agent` call marks the target agent as `closed`; a successful `resume_agent` call clears that mark.
 
-The hook records one meaningful process identity: the Codex session PID. Hook recording requires either `--codex-pid <pid>` or a valid `CODEX_PID` environment variable; it does not write hook rows from an untrusted `npx`/`npm` child process tree fallback. The legacy database columns `hook_parent_pid` and `hook_session_pid` are kept for compatibility, but new records and public output use both as aliases for the same Codex session PID. When a later `SubagentStart` or CLI query for the same `session_id` comes from a different identified Codex session process, older running runs for that session are treated as stale after a parent shutdown and automatically marked `stopped`. Wrapper parent PIDs from shell, npm, and `npx` are ignored.
+The hook records one meaningful process identity: the Codex session PID. Hook recording requires either `--codex-pid <pid>` or a valid `CODEX_PID` environment variable; it does not write hook rows from an untrusted `npx`/`npm` child process tree fallback. The legacy database columns `hook_parent_pid` and `hook_session_pid` are kept for compatibility, but new records and public output use both as aliases for the same Codex session PID. When a later `SubagentStart` or CLI query for the same `session_id` comes from a different identified Codex session process, older running runs for that session are treated as stale after a parent shutdown and automatically marked `closed` with `stopReason: "pid-change"`. Wrapper parent PIDs from shell, npm, and `npx` are ignored.
 
 ## Hook Configuration
 
@@ -177,9 +177,9 @@ Every stored payload is also stored as compact raw JSON in `payload_json`, so ne
 
 `SubagentStop` means the subagent turn ended. It does not prove that the parent closed the agent thread.
 
-List output exposes `stopReason` for stopped and closed rows when available. `hook` means a real `SubagentStop` hook row was recorded. `pid-change` means a running row was marked stopped because a later hook event or CLI query for the same session came from a different identified Codex session process.
+List output exposes `stopReason` for stopped and closed rows when available. `hook` means a real `SubagentStop` hook row was recorded. `pid-change` means a running row was closed as stale because a later hook event or CLI query for the same session came from a different identified Codex session process.
 
-Rows stopped with `pid-change` are stale markers, not raw `SubagentStop` records. They have `stop_time` and `stopReason: "pid-change"`, but no `stop_event_id` or `stop_payload`.
+Rows closed with `pid-change` are stale markers, not raw `SubagentStop` records. They have `stop_time`, `close_time`, and `stopReason: "pid-change"`, but no `stop_event_id` or `stop_payload`.
 
 For human diagnostics of PID detection, run:
 

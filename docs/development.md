@@ -4,7 +4,7 @@
 
 `subagent-auto-manager` records Codex subagent lifecycle hook payloads into a project-local SQLite ledger and exposes compact, medium, or full detail JSON/YAML CLI views by session. It also records state-changing `PostToolUse` calls for `close_agent` and `resume_agent` so closed thread state can be tracked separately from subagent turn completion. Unrelated `PostToolUse` calls are ignored.
 
-The hook records one meaningful process identity: the Codex session process PID. Hook recording requires `--codex-pid <pid>` or a valid `CODEX_PID` environment variable, and both legacy PID columns store that same Codex session PID. If a new `SubagentStart` or CLI query for the same session sees a different identified Codex session process, prior running rows for that session are considered stale after parent shutdown and are automatically marked `stopped`. Wrapper parent PID changes alone do not mark rows stale because hook commands can run under short-lived shell, npm, or `npx` wrapper processes.
+The hook records one meaningful process identity: the Codex session process PID. Hook recording requires `--codex-pid <pid>` or a valid `CODEX_PID` environment variable, and both legacy PID columns store that same Codex session PID. If a new `SubagentStart` or CLI query for the same session sees a different identified Codex session process, prior running rows for that session are considered stale after parent shutdown and are automatically marked `closed` with `stopReason: "pid-change"`. Wrapper parent PID changes alone do not mark rows stale because hook commands can run under short-lived shell, npm, or `npx` wrapper processes.
 
 ## Package Shape
 
@@ -41,9 +41,9 @@ The database stores:
 
 Hooks use the `session_id` field provided by Codex in the hook JSON.
 
-For hook-created starts, the Codex session PID stores `--codex-pid` or `CODEX_PID`. A Codex session PID change within the same `session_id` means the previous Codex session process has shut down, so old running runs are stopped before the new start is recorded. CLI `running`, `list`, `wait`, and `debug` perform stale-run reconcile before reading the ledger when they can identify the current Codex session process. If the Codex session PID cannot be identified, PID-change reconcile does not run.
+For hook-created starts, the Codex session PID stores `--codex-pid` or `CODEX_PID`. A Codex session PID change within the same `session_id` means the previous Codex session process has shut down, so old running runs are closed as stale before the new start is recorded. CLI `running`, `list`, `wait`, and `debug` perform stale-run reconcile before reading the ledger when they can identify the current Codex session process. If the Codex session PID cannot be identified, PID-change reconcile does not run.
 
-The CLI defaults to `CODEX_THREAD_ID`, running-only filtering, and pretty JSON. With no list/filter arguments it hides `runs` and returns summary only. With list/filter arguments it defaults to compact runs containing `agentId`, `state`, and `stopReason` for stopped or closed runs when available. `--agent` filters list/running output by `agentId`, `subagentId`, full `runKey`, or `<session>:<agent-id>`. `stopReason` is `hook` for a recorded `SubagentStop` and `pid-change` when a running row was marked stopped after the identified Codex session process changed. It also accepts:
+The CLI defaults to `CODEX_THREAD_ID`, running-only filtering, and pretty JSON. With no list/filter arguments it hides `runs` and returns summary only. With list/filter arguments it defaults to compact runs containing `agentId`, `state`, and `stopReason` for stopped or closed runs when available. `--agent` filters list/running output by `agentId`, `subagentId`, full `runKey`, or `<session>:<agent-id>`. `stopReason` is `hook` for a recorded `SubagentStop` and `pid-change` when a running row was closed as stale after the identified Codex session process changed. It also accepts:
 
 ```sh
 npx -y subagent-auto-manager@latest --session <session-id> --cwd <project> --agent <agent-id>

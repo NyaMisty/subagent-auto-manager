@@ -553,7 +553,7 @@ test("stores the Codex session pid in both legacy hook pid fields", () => {
   }
 });
 
-test("auto-stops prior running subagents when Codex session process changes in the same session", () => {
+test("auto-closes prior running subagents when Codex session process changes in the same session", () => {
   const root = tempRoot();
   const ledger = SubagentLedger.open(root);
 
@@ -595,8 +595,8 @@ test("auto-stops prior running subagents when Codex session process changes in t
     assert.deepEqual(ledger.summary("session-shutdown"), {
       sessionId: "session-shutdown",
       running: 1,
-      stopped: 1,
-      closed: 0,
+      stopped: 0,
+      closed: 1,
       total: 2
     });
 
@@ -604,13 +604,18 @@ test("auto-stops prior running subagents when Codex session process changes in t
     const previous = runs.find((run) => run.agentId === "agent-before-shutdown");
     const current = runs.find((run) => run.agentId === "agent-after-shutdown");
     assert.equal(previous?.status, "stopped");
+    assert.equal(previous?.closed, true);
     assert.equal(previous?.stopEventId, null);
     assert.equal(previous?.stopPayload, null);
+    assert.equal(previous?.closeEventId, null);
+    assert.equal(previous?.closePayload, null);
     assert.equal(previous?.codexSessionPid, 9000);
     assert.equal(previous?.hookParentPid, 9000);
     assert.equal(previous?.hookSessionPid, 9000);
     assert.notEqual(previous?.stopTime, null);
+    assert.equal(previous?.closeTime, previous?.stopTime);
     assert.equal(current?.status, "running");
+    assert.equal(current?.closed, false);
     assert.equal(current?.codexSessionPid, 9100);
     assert.equal(current?.hookParentPid, 9100);
     assert.equal(current?.hookSessionPid, 9100);
@@ -645,9 +650,13 @@ test("reconciles stale running rows when the current Codex session process chang
     assert.deepEqual(result, { matched: 1, stopped: 1 });
     const run = ledger.listSession("session-cli-reconcile")[0];
     assert.equal(run?.status, "stopped");
+    assert.equal(run?.closed, true);
     assert.equal(run?.stopEventId, null);
     assert.equal(run?.stopPayload, null);
+    assert.equal(run?.closeEventId, null);
+    assert.equal(run?.closePayload, null);
     assert.notEqual(run?.stopTime, null);
+    assert.equal(run?.closeTime, run?.stopTime);
   } finally {
     ledger.close();
     rmSync(root, { recursive: true, force: true });
