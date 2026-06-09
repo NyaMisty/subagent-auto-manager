@@ -808,7 +808,9 @@ test("hook command through CLI records explicit Codex pid and exposes it through
     const hook = runCliWithInput(["hook", "--codex-pid", "12345"], JSON.stringify(payload), {
       CODEX_THREAD_ID: "session-hook-cli"
     });
-    const query = runCli(["--cwd", root, "--session", "session-hook-cli", "--agent", "agent-hook-cli", "--running", "--full"], {});
+    const query = runCli(["--cwd", root, "--session", "session-hook-cli", "--agent", "agent-hook-cli", "--running", "--full"], {
+      CODEX_PID: "12345"
+    });
 
     assert.equal(hook.stdout, "{}\n");
     assert.equal(hook.stderr, "");
@@ -839,7 +841,9 @@ test("hook command still accepts CODEX_PID environment variable", async () => {
       CODEX_THREAD_ID: "session-hook-env-pid",
       CODEX_PID: "23456"
     });
-    const query = runCli(["--cwd", root, "--session", "session-hook-env-pid", "--agent", "agent-hook-env-pid", "--running", "--full"], {});
+    const query = runCli(["--cwd", root, "--session", "session-hook-env-pid", "--agent", "agent-hook-env-pid", "--running", "--full"], {
+      CODEX_PID: "23456"
+    });
 
     assert.equal(hook.stdout, "{}\n");
     assert.equal(hook.stderr, "");
